@@ -65,18 +65,18 @@ export default async function OverviewPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[20px] font-medium tracking-tight">概览</h1>
-          <p className="mt-0.5 text-[13px] text-text-secondary">
-            环境自检页 · T01 工程基座验收用，T05 起由指标卡替换
+          <h1 className="text-[22px] leading-7 font-semibold tracking-tight">概览</h1>
+          <p className="mt-1 text-[12.5px] text-text-secondary">
+            环境健康 · 数据基线 · 评测基线，打开即重新自检
           </p>
         </div>
         <RefreshButton />
       </div>
 
       {s.db === 'down' ? (
-        <div className="mb-4 rounded-[8px] border border-border bg-[#FEF3F2] px-4 py-3 text-[13px] text-danger">
+        <div className="mb-4 rounded-xl border border-danger/25 bg-danger-soft px-4 py-3 text-[13px] text-danger">
           <p className="font-medium">数据库连接失败</p>
           <p className="mt-0.5 font-mono text-[12px] break-all opacity-80">{s.dbError}</p>
         </div>
@@ -85,13 +85,15 @@ export default async function OverviewPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {checks.map((c) => (
           <Card key={c.label} className="p-4">
-            <p className="text-[12px] text-text-secondary">{c.label}</p>
-            <p className="mt-2 truncate font-mono text-[13px]" title={c.value}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[11.5px] text-text-tertiary">{c.label}</p>
+              <StatusPill tone={c.tone} className="px-1.5 py-0 text-[10.5px]">
+                {c.text}
+              </StatusPill>
+            </div>
+            <p className="mt-2.5 truncate font-mono text-[13px] text-text" title={c.value}>
               {c.value}
             </p>
-            <div className="mt-3">
-              <StatusPill tone={c.tone}>{c.text}</StatusPill>
-            </div>
           </Card>
         ))}
       </div>
@@ -109,15 +111,12 @@ export default async function OverviewPage() {
             { label: '历史案例', value: data.cases, base: SEED_BASELINE.cases },
             { label: '告警', value: data.alerts, base: null },
           ].map((item) => (
-            <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
-              <p className="text-[12px] text-text-secondary">{item.label}</p>
-              <p className="mt-0.5 flex items-baseline gap-1">
-                <span className="tabular font-mono text-[18px] leading-6">{item.value}</span>
-                {item.base !== null ? (
-                  <span className="font-mono text-[11px] text-text-tertiary">/ {item.base}</span>
-                ) : null}
-              </p>
-            </div>
+            <Tile
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              suffix={item.base !== null ? String(item.base) : undefined}
+            />
           ))}
         </div>
         <div className="mt-3 flex items-center gap-2 text-[12px] text-text-secondary">
@@ -141,15 +140,12 @@ export default async function OverviewPage() {
             { label: 'RESOLVED 已恢复', value: alerts.resolved, tone: 'muted' as Tone },
             { label: '折叠次数', value: alerts.collapsed, tone: 'info' as Tone },
           ].map((item) => (
-            <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
-              <p className="text-[12px] text-text-secondary">{item.label}</p>
-              <p className="mt-0.5 flex items-baseline gap-1">
-                <span className="tabular font-mono text-[18px] leading-6">{item.value}</span>
-                {alerts.total > 0 ? (
-                  <span className="font-mono text-[11px] text-text-tertiary">/ {alerts.total}</span>
-                ) : null}
-              </p>
-            </div>
+            <Tile
+              key={item.label}
+              label={item.label}
+              value={item.value}
+              suffix={alerts.total > 0 ? String(alerts.total) : undefined}
+            />
           ))}
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
@@ -178,12 +174,7 @@ export default async function OverviewPage() {
             { label: '累计事件', value: incidents.total },
             { label: '告警/事件', value: compression },
           ].map((item) => (
-            <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
-              <p className="text-[12px] text-text-secondary">{item.label}</p>
-              <p className="mt-0.5 flex items-baseline gap-1">
-                <span className="tabular font-mono text-[18px] leading-6">{item.value}</span>
-              </p>
-            </div>
+            <Tile key={item.label} label={item.label} value={item.value} />
           ))}
         </div>
 
@@ -249,7 +240,7 @@ export default async function OverviewPage() {
                   ok: evalTest.passed === evalTest.total,
                 },
               ].map((item) => (
-                <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
+                <div key={item.label} className="rounded-[10px] bg-surface-muted/75 px-3 py-2.5">
                   <p className="flex items-baseline gap-1.5 text-[12px] text-text-secondary">
                     {item.label}
                     <span className={`text-[10px] ${item.ok ? 'text-ok' : 'text-danger'}`}>
@@ -328,7 +319,7 @@ npx playwright test             # 两条主路径 E2E`}
                 <span
                   className={`ml-auto rounded-[4px] px-1.5 py-px text-[11px] ${
                     state === '已完成'
-                      ? 'bg-[#ECFDF3] text-ok'
+                      ? 'bg-ok-soft text-ok'
                       : 'bg-surface-muted text-text-tertiary'
                   }`}
                 >
@@ -342,6 +333,34 @@ npx playwright test             # 两条主路径 E2E`}
           </p>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 卡片里的指标小块。只靠一层浅底区分层级，不加描边 ——
+ * 白卡里再套一圈边框，一屏四张卡就是八条线，视觉上会打架。
+ */
+function Tile({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: number | string;
+  suffix?: string;
+}) {
+  return (
+    <div className="rounded-[10px] bg-surface-muted/75 px-3 py-2.5">
+      <p className="text-[11.5px] text-text-tertiary">{label}</p>
+      <p className="mt-1 flex items-baseline gap-1">
+        <span className="tabular font-mono text-[19px] leading-6 font-medium text-text">
+          {value}
+        </span>
+        {suffix ? (
+          <span className="font-mono text-[11px] text-text-tertiary">/ {suffix}</span>
+        ) : null}
+      </p>
     </div>
   );
 }

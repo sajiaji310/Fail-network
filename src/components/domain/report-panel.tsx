@@ -90,7 +90,7 @@ export function ReportPanel({
   }
 
   return (
-    <section className="mt-4 rounded-[10px] border border-border bg-surface">
+    <section className="mt-4 rounded-xl border border-border bg-surface shadow-card">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5">
         <button
           type="button"
@@ -155,7 +155,7 @@ export function ReportPanel({
       </header>
 
       {error ? (
-        <p className="border-b border-border bg-[#FEF3F2] px-4 py-2 text-[11px] text-danger">
+        <p className="border-b border-border bg-danger-soft px-4 py-2 text-[11px] text-danger">
           {error}
         </p>
       ) : null}

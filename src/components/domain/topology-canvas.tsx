@@ -45,12 +45,12 @@ function DeviceNode({ data }: NodeProps<DeviceFlowNode>) {
   return (
     <div
       className={cn(
-        'flex h-full w-full flex-col justify-center gap-0.5 rounded-[8px] border bg-surface px-2.5 text-left shadow-[0_1px_2px_rgba(16,24,40,0.06)]',
+        'flex h-full w-full flex-col justify-center gap-0.5 rounded-[9px] border bg-surface px-2.5 text-left shadow-card transition-shadow',
         data.state === 'affected'
-          ? 'border-sev-p0 bg-[#FEF3F2]'
+          ? 'border-sev-p0 bg-danger-soft shadow-[0_0_0_3px_rgba(180,35,24,0.07),0_1px_2px_rgba(15,23,42,0.08)]'
           : data.state === 'neighbor'
-            ? 'border-border-strong'
-            : 'border-border opacity-60',
+            ? 'border-border-strong/90'
+            : 'border-border opacity-55',
         data.selected && 'ring-2 ring-primary ring-offset-1',
       )}
     >
@@ -171,7 +171,7 @@ export function TopologyCanvas({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-[10px] border border-border bg-bg',
+        'relative overflow-hidden rounded-xl border border-border bg-surface shadow-card',
         className,
       )}
       style={{ height }}
@@ -189,7 +189,6 @@ export function TopologyCanvas({
         nodesConnectable={false}
         edgesFocusable={false}
         elementsSelectable
-        proOptions={{ hideAttribution: true }}
       >
         {controls ? <Controls showInteractive={false} position="bottom-right" /> : null}
         <Background gap={16} size={1} color="var(--color-border)" />

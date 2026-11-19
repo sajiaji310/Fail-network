@@ -52,8 +52,12 @@ export function HypothesisCard({
 
   return (
     <li
-      className={`rounded-[8px] border bg-surface px-3 py-2.5 ${
-        accepted ? 'border-ok/40' : rejected ? 'border-border opacity-70' : 'border-border'
+      className={`rounded-[10px] border bg-surface px-3 py-2.5 transition-colors ${
+        accepted
+          ? 'border-ok/45 bg-ok-soft/25'
+          : rejected
+            ? 'border-border/80 opacity-70'
+            : 'border-border/90'
       }`}
     >
       <div className="flex items-start gap-2">
@@ -62,7 +66,7 @@ export function HypothesisCard({
         </span>
         <p className="text-[12px] font-medium leading-[1.45] text-text">{hypothesis.cause}</p>
         {accepted ? (
-          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-[3px] bg-[#ECFDF3] px-1 py-px text-[10px] text-ok">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-[3px] bg-ok-soft px-1 py-px text-[10px] text-ok">
             <Check size={9} strokeWidth={3} />
             已采纳
           </span>
@@ -74,8 +78,11 @@ export function HypothesisCard({
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-muted">
-          <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-border/50">
+          <div
+            className="h-full rounded-full bg-linear-to-r from-primary/75 to-primary"
+            style={{ width: `${percent}%` }}
+          />
         </div>
         <span className="font-mono text-[10px] text-text-secondary">{percent}%</span>
       </div>
@@ -162,7 +169,7 @@ export function HypothesisCard({
             disabled={verdictPending}
             className={`inline-flex h-6 items-center gap-1 rounded-[5px] border px-1.5 text-[10.5px] transition-colors disabled:opacity-50 ${
               accepted
-                ? 'border-ok/40 bg-[#ECFDF3] text-ok'
+                ? 'border-ok/40 bg-ok-soft text-ok'
                 : 'border-border-strong bg-surface text-text-secondary hover:bg-surface-muted hover:text-text'
             }`}
           >

@@ -34,13 +34,13 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
         </Link>
       </div>
 
-      <header className="mb-4 rounded-[10px] border border-border bg-surface px-4 py-3">
+      <header className="mb-4 rounded-xl border border-border bg-surface shadow-card px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[12px] text-text-tertiary">{detail.code}</span>
           <SeverityPill severity={detail.severity} />
           <IncidentStatusPill status={detail.status} />
           {detail.reopenedCount > 0 ? (
-            <span className="rounded-[4px] bg-[#FFFAEB] px-1.5 py-px text-[11px] text-warn">
+            <span className="rounded-[4px] bg-warn-soft px-1.5 py-px text-[11px] text-warn">
               重开 {detail.reopenedCount} 次
             </span>
           ) : null}

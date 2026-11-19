@@ -41,6 +41,8 @@ NetScope 把这三件事串成一条链：告警先被压成事件，事件被�
 
 ![案例库](docs/screenshots/cases.png)
 
+界面统一走 `src/app/globals.css` 的 `@theme` 令牌：冷中性灰底、分层阴影、细描边，组件内不写死色值。卡片、状态徽标、分段筛选器、按钮分别收敛为 `ui/card.tsx`、`ui/status-pill.tsx`、`ui/tabs.tsx`、`ui/button.tsx`，改一处配色即全局生效。以上截图由 `node scripts/screenshots.mjs` 注入剧本后真实渲染生成，不是手摆的示意图。
+
 ## 架构
 
 ```mermaid

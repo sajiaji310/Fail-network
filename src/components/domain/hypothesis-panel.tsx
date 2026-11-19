@@ -144,7 +144,11 @@ export function HypothesisPanel({
               {isRule ? '规则引擎' : '模型研判'}
             </span>
             <span aria-hidden>·</span>
-            <time dateTime={analysis.analyzedAt} title={absTime(analysis.analyzedAt)}>
+            <time
+              dateTime={analysis.analyzedAt}
+              title={absTime(analysis.analyzedAt)}
+              suppressHydrationWarning
+            >
               {relTime(analysis.analyzedAt)}
             </time>
             {analysis.trim.length > 0 ? (

@@ -42,7 +42,7 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto max-w-[1180px]">
       <header className="mb-4">
-        <h1 className="text-[20px] font-medium tracking-tight">设置</h1>
+        <h1 className="text-[22px] leading-7 font-semibold tracking-tight">设置</h1>
         <p className="mt-0.5 text-[12px] text-text-secondary">
           运行参数只读展示 · 模型配置来自 <code className="font-mono">.env</code>，聚合阈值来自{' '}
           <code className="font-mono">constants.ts</code> · 改完需重启进程
@@ -56,10 +56,10 @@ export default async function SettingsPage() {
           <span
             className={
               model.mode === 'live'
-                ? 'rounded-[4px] bg-[#ECFDF3] px-2 py-0.5 text-[11px] text-ok'
+                ? 'rounded-[4px] bg-ok-soft px-2 py-0.5 text-[11px] text-ok'
                 : model.mode === 'mock'
                   ? 'rounded-[4px] bg-surface-muted px-2 py-0.5 text-[11px] text-text-secondary'
-                  : 'rounded-[4px] bg-[#FFFAEB] px-2 py-0.5 text-[11px] text-warn'
+                  : 'rounded-[4px] bg-warn-soft px-2 py-0.5 text-[11px] text-warn'
             }
           >
             {model.modeLabel}
@@ -187,7 +187,7 @@ export default async function SettingsPage() {
         </p>
       </Card>
 
-      <div className="mt-4 rounded-[12px] border border-border bg-surface px-5 py-4 text-[11.5px] leading-relaxed text-text-tertiary">
+      <div className="mt-4 rounded-xl border border-border bg-surface px-5 py-4 text-[11.5px] leading-relaxed text-text-tertiary shadow-card">
         <p>NetScope v0.1.0 · MVP-0 · 单人 + Agent 协作基线 · 阶段 T09（评测与发布）</p>
         <p className="mt-1">
           接口清单见 <code className="font-mono">docs/API.md</code>，已实现范围与已知偏差见{' '}

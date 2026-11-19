@@ -14,27 +14,40 @@ const LLM_LABEL: Record<Props['llm'], string> = {
   fallback: '规则降级',
 };
 
+/**
+ * 顶栏做成半透明吸顶：滚动长页面（事件列表、详情）时环境状态始终可见，
+ * 而且内容从下面透过去，视觉上比一条纯白横杠更轻。
+ */
 export function Topbar({ db, llm, stage }: Props) {
+  const dbUp = db === 'up';
+
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-6">
-      <span className="rounded-[6px] bg-surface-muted px-2 py-1 font-mono text-[11px] text-text-secondary">
-        {stage}
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-bg/75 px-6 backdrop-blur-xl">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-[3px] shadow-pill">
+        <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+        <span className="font-mono text-[10.5px] tracking-wide text-text-secondary">{stage}</span>
       </span>
 
-      <div className="ml-auto flex items-center gap-4 text-[12px]">
-        <span className="flex items-center gap-1.5 text-text-secondary">
-          <Database size={14} strokeWidth={1.5} />
+      <div className="ml-auto flex items-center gap-2 text-[11.5px]">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-[3px] shadow-pill">
+          <Database size={12} strokeWidth={1.7} className="text-text-tertiary" />
           <span
-            className={cn('size-1.5 rounded-full', db === 'up' ? 'bg-ok' : 'bg-danger')}
+            className={cn(
+              'size-1.5 rounded-full',
+              dbUp ? 'bg-ok' : 'bg-danger',
+              dbUp
+                ? 'shadow-[0_0_0_3px_rgba(6,118,71,0.12)]'
+                : 'shadow-[0_0_0_3px_rgba(180,35,24,0.12)]',
+            )}
             aria-hidden
           />
-          <span className={db === 'up' ? 'text-text-secondary' : 'text-danger'}>
-            DB {db === 'up' ? '已连接' : '不可用'}
+          <span className={dbUp ? 'text-text-secondary' : 'font-medium text-danger'}>
+            DB {dbUp ? '已连接' : '不可用'}
           </span>
         </span>
 
-        <span className="flex items-center gap-1.5 text-text-secondary">
-          <Sparkles size={14} strokeWidth={1.5} />
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-[3px] text-text-secondary shadow-pill">
+          <Sparkles size={12} strokeWidth={1.7} className="text-text-tertiary" />
           {LLM_LABEL[llm]}
         </span>
       </div>

@@ -6,24 +6,27 @@
    ============================================================ */
 
 @theme {
-  /* 背景与边框 */
-  --color-bg: #f7f8fa;
+  /* 背景与边框 —— 冷中性（偏蓝），比纯灰在屏幕上更"干净" */
+  --color-bg: #f5f7fa;
   --color-surface: #ffffff;
-  --color-surface-muted: #f1f3f6;
-  --color-border: #e3e6eb;
-  --color-border-strong: #cbd2da;
+  --color-surface-muted: #f4f6fa;
+  --color-surface-sunken: #eef1f6;
+  --color-border: #e5e9ef;
+  --color-border-strong: #ccd4de;
 
-  /* 文本 */
-  --color-text: #16191d;
-  --color-text-secondary: #5a6472;
-  --color-text-tertiary: #8a93a0;
+  /* 文本 —— 正文压到近黑，次级/三级拉开层次，避免"一片灰" */
+  --color-text: #0e141b;
+  --color-text-secondary: #56616f;
+  --color-text-tertiary: #8c96a4;
   --color-text-inverse: #ffffff;
 
   /* 主色 */
   --color-primary: #1b4f8f;
-  --color-primary-hover: #164178;
-  --color-primary-soft: #e8f0fa;
-  --color-accent: #0f766e;
+  --color-primary-hover: #143c6e;
+  --color-primary-soft: #e9f1fb;
+  --color-primary-ring: rgba(27, 79, 143, 0.18);
+  --color-accent: #0d6b61;
+  --color-accent-soft: #e6f4f1;
 
   /* 严重度 */
   --color-sev-p0: #b42318;
@@ -31,23 +34,35 @@
   --color-sev-p2: #175cd3;
   --color-sev-p3: #667085;
 
-  /* 语义色 */
+  /* 语义色 + 对应的浅底（原来散落在各组件里的 #ECFDF3 之类，收进来） */
   --color-ok: #067647;
+  --color-ok-soft: #ecfdf3;
   --color-warn: #b54708;
+  --color-warn-soft: #fffaeb;
   --color-danger: #b42318;
+  --color-danger-soft: #fef3f2;
   --color-info: #175cd3;
+  --color-info-soft: #eff6ff;
+
+  /* 遮罩 */
+  --color-overlay: #0b1220;
 
   /* 圆角 */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 14px;
 
   /* 字体 */
-  --font-sans: Inter, 'Noto Sans SC', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans:
+    'Segoe UI Variable Text', 'Segoe UI', Inter, 'Noto Sans SC', -apple-system, system-ui,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', Consolas, ui-monospace, monospace;
 
-  /* 阴影 */
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
+  /* 阴影 —— 两层：1px 贴边定形 + 大范围柔和扩散定高度 */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -18px rgba(15, 23, 42, 0.16);
+  --shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.06), 0 18px 40px -24px rgba(15, 23, 42, 0.3);
+  --shadow-pill: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 :root {
@@ -69,15 +84,29 @@
 
   html {
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
   body {
-    background-color: var(--color-bg);
+    /* 极淡的双点径向光晕：整块背景不再是死板的纯色，但也不会抢内容 */
+    background:
+      radial-gradient(1100px 520px at 6% -8%, rgba(27, 79, 143, 0.055), transparent 62%),
+      radial-gradient(820px 420px at 100% -4%, rgba(13, 107, 97, 0.04), transparent 58%),
+      var(--color-bg);
+    background-attachment: fixed;
     color: var(--color-text);
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.55;
+    font-feature-settings: 'kern' 1;
+  }
+
+  /* 标题收紧字距：中文在默认字距下偏散，收紧后成组更像"标题" */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.015em;
   }
 
   /* 数字统一等宽，表格里不跳动 */
@@ -90,15 +119,53 @@
     color: var(--color-primary);
   }
 
+  /* 键盘可达性：鼠标点击不出框，Tab 才出 */
+  :focus-visible {
+    outline: 2px solid var(--color-primary-ring);
+    outline-offset: 2px;
+  }
+
   /* 细滚动条，控制台观感 */
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 9px;
+    height: 9px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--color-border-strong) 82%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
     background-color: var(--color-border-strong);
-    border-radius: 6px;
-    border: 3px solid var(--color-bg);
+  }
+}
+
+/* 首屏/换页时内容极轻微上浮淡入。只动透明度与 4px 位移：
+   控制台不需要花哨转场，但"硬切"会显得生硬。 */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise {
+    animation: none;
   }
 }

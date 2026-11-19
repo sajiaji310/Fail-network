@@ -12,7 +12,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar db={status.db} llm={status.llm} stage={status.stage} />
-        <main className="flex-1 px-6 py-5">{children}</main>
+        <main className="flex-1 px-6 py-5">
+          <div className="animate-rise">{children}</div>
+        </main>
       </div>
     </div>
   );

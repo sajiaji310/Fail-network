@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Severity } from '@prisma/client';
 import { ArrowUpRight, BookOpen, Search } from 'lucide-react';
 import { SeverityPill } from '@/components/ui/badges';
+import { buttonClass } from '@/components/ui/button';
 import { absTime, duration, relTime } from '@/lib/utils/time';
 import { getCaseStats, getCaseTagStats, listCases } from '@/modules/case/service';
 import { cn } from '@/lib/utils/cn';
@@ -45,7 +46,7 @@ export default async function CasesPage({
     <div className="mx-auto max-w-[1180px]">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-medium tracking-tight">案例库</h1>
+          <h1 className="text-[22px] leading-7 font-semibold tracking-tight">案例库</h1>
           <p className="mt-0.5 text-[12px] text-text-secondary">
             结案时自动沉淀的故障案例 · 共 {stats.total} 条，近 7 天新增 {stats.last7d} 条
           </p>
@@ -64,13 +65,13 @@ export default async function CasesPage({
             name="q"
             defaultValue={q}
             placeholder="搜索现象、根因、处置内容或标签，多个词用空格分隔（按 AND 匹配）"
-            className="h-9 w-full rounded-[6px] border border-border-strong bg-surface pr-3 pl-8 text-[12.5px] text-text outline-none placeholder:text-text-tertiary focus:border-primary"
+            className="h-9 w-full rounded-[8px] border border-border-strong bg-surface pr-3 pl-8 text-[12.5px] text-text shadow-pill transition-shadow outline-none placeholder:text-text-tertiary focus:border-primary focus:shadow-[0_0_0_3px_var(--color-primary-ring)]"
           />
         </div>
         {tag ? <input type="hidden" name="tag" value={tag} /> : null}
         <button
           type="submit"
-          className="inline-flex h-9 items-center rounded-[6px] bg-primary px-3.5 text-[12.5px] font-medium text-text-inverse hover:bg-primary-hover"
+          className="inline-flex h-9 items-center rounded-[8px] bg-linear-to-b from-primary to-primary-hover px-3.5 text-[12.5px] font-medium text-text-inverse shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_1px_2px_rgba(15,23,42,0.18)] transition-all duration-150 hover:brightness-[1.06] active:translate-y-px"
         >
           检索
         </button>
@@ -109,7 +110,7 @@ export default async function CasesPage({
       ) : null}
 
       {list.items.length === 0 ? (
-        <div className="rounded-[12px] border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
+        <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
           <BookOpen size={22} strokeWidth={1.5} className="mx-auto text-text-tertiary" />
           <p className="mt-2 text-[14px] font-medium text-text">
             {filtered ? '没有匹配的案例' : '案例库还是空的'}
@@ -121,17 +122,11 @@ export default async function CasesPage({
           </p>
           <div className="mt-4 flex items-center justify-center gap-2">
             {filtered ? (
-              <Link
-                href="/cases"
-                className="inline-flex h-8 items-center rounded-[6px] border border-border-strong bg-surface px-3 text-[12px] font-medium text-text-secondary hover:bg-surface-muted hover:text-text"
-              >
+              <Link href="/cases" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
                 清除筛选
               </Link>
             ) : (
-              <Link
-                href="/incidents"
-                className="inline-flex h-8 items-center rounded-[6px] bg-primary px-3 text-[12px] font-medium text-text-inverse hover:bg-primary-hover"
-              >
+              <Link href="/incidents" className={buttonClass({ variant: 'primary', size: 'sm' })}>
                 去事件列表结案
               </Link>
             )}
@@ -142,7 +137,7 @@ export default async function CasesPage({
           {list.items.map((item) => (
             <li
               key={item.id}
-              className="flex flex-col rounded-[10px] border border-border bg-surface px-4 py-3"
+              className="flex flex-col rounded-xl border border-border bg-surface px-4 py-3.5 shadow-card transition-all duration-200 hover:-translate-y-px hover:border-border-strong/90 hover:shadow-raised"
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 <SeverityPill severity={item.severity as Severity} compact />

@@ -14,6 +14,10 @@ const BAR_COLOR: Record<Severity, string> = {
   P3: 'bg-sev-p3',
 };
 
+function Dot() {
+  return <span className="size-[3px] shrink-0 rounded-full bg-border-strong" aria-hidden />;
+}
+
 export function IncidentCard({ incident }: { incident: IncidentListItem }) {
   const devNames = incident.deviceNames.slice(0, 3).join('、');
   const rest = incident.deviceNames.length - 3;
@@ -22,8 +26,9 @@ export function IncidentCard({ incident }: { incident: IncidentListItem }) {
     <Link
       href={`/incidents/${incident.id}`}
       className={cn(
-        'group relative flex flex-col gap-2 overflow-hidden rounded-[10px] border border-border bg-surface py-3 pl-4 pr-4',
-        'shadow-[0_1px_2px_rgba(16,24,40,0.06)] transition-colors hover:border-border-strong',
+        'group relative flex h-full flex-col gap-2 overflow-hidden rounded-xl border border-border bg-surface py-3.5 pr-4 pl-4.5',
+        'shadow-card transition-all duration-200',
+        'hover:-translate-y-px hover:border-border-strong/90 hover:shadow-raised',
       )}
     >
       <span
@@ -40,27 +45,30 @@ export function IncidentCard({ incident }: { incident: IncidentListItem }) {
         </span>
       </div>
 
-      <h3 className="line-clamp-1 text-[14px] font-medium text-text group-hover:text-primary">
+      <h3 className="line-clamp-1 text-[14px] font-medium text-text transition-colors group-hover:text-primary">
         {incident.title}
       </h3>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
-        <span>
-          告警 <span className="font-mono tabular">{incident.alertCount}</span>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-text-secondary">
+        <span className="inline-flex items-baseline gap-1">
+          告警 <span className="tabular font-mono text-text">{incident.alertCount}</span>
         </span>
-        <span className="text-border-strong">|</span>
-        <span>
-          设备 <span className="font-mono tabular">{incident.deviceCount}</span>
+        <Dot />
+        <span className="inline-flex items-baseline gap-1">
+          设备 <span className="tabular font-mono text-text">{incident.deviceCount}</span>
         </span>
         {incident.resolvedAt && incident.mttrSeconds !== null ? (
           <>
-            <span className="text-border-strong">|</span>
-            <span>MTTR {duration(incident.mttrSeconds)}</span>
+            <Dot />
+            <span className="inline-flex items-baseline gap-1">
+              MTTR{' '}
+              <span className="tabular font-mono text-text">{duration(incident.mttrSeconds)}</span>
+            </span>
           </>
         ) : null}
         {incident.reopenedCount > 0 ? (
           <>
-            <span className="text-border-strong">|</span>
+            <Dot />
             <span className="text-warn">重开 {incident.reopenedCount} 次</span>
           </>
         ) : null}

@@ -51,19 +51,22 @@ export function AlertTable({
 }: AlertTableProps) {
   return (
     <div
-      className={cn('overflow-auto rounded-[10px] border border-border bg-surface', className)}
+      className={cn(
+        'overflow-auto rounded-xl border border-border bg-surface shadow-card',
+        className,
+      )}
       style={maxHeight ? { maxHeight } : undefined}
     >
       <table className="w-full border-collapse text-[12px]">
-        <thead className="sticky top-0 z-10 bg-surface-muted text-left text-[11px] font-medium text-text-secondary">
+        <thead className="sticky top-0 z-10 bg-surface-muted/85 text-left text-[10.5px] font-medium tracking-wide text-text-tertiary backdrop-blur-sm">
           <tr>
-            <th className="whitespace-nowrap px-3 py-2">时间</th>
-            <th className="whitespace-nowrap px-3 py-2">设备</th>
-            <th className="whitespace-nowrap px-3 py-2">告警</th>
-            <th className="whitespace-nowrap px-3 py-2">级别</th>
-            <th className="whitespace-nowrap px-3 py-2">状态</th>
-            <th className="whitespace-nowrap px-3 py-2 text-right">次数</th>
-            <th className="px-3 py-2">消息</th>
+            <th className="whitespace-nowrap px-3 py-2.5">时间</th>
+            <th className="whitespace-nowrap px-3 py-2.5">设备</th>
+            <th className="whitespace-nowrap px-3 py-2.5">告警</th>
+            <th className="whitespace-nowrap px-3 py-2.5">级别</th>
+            <th className="whitespace-nowrap px-3 py-2.5">状态</th>
+            <th className="whitespace-nowrap px-3 py-2.5 text-right">次数</th>
+            <th className="px-3 py-2.5">消息</th>
           </tr>
         </thead>
         <tbody>
@@ -82,11 +85,11 @@ export function AlertTable({
                 <tr
                   key={row.id}
                   className={cn(
-                    'border-t border-border align-middle',
-                    selected ? 'bg-primary-soft' : 'hover:bg-surface-muted',
+                    'border-t border-border/70 align-middle transition-colors',
+                    selected ? 'bg-primary-soft' : 'hover:bg-surface-muted/60',
                   )}
                 >
-                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[11px] text-text-secondary">
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] text-text-secondary">
                     <time
                       dateTime={row.firstSeen}
                       title={absTime(row.firstSeen)}
@@ -98,7 +101,7 @@ export function AlertTable({
                       {relTime(row.firstSeen)}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5">
+                  <td className="whitespace-nowrap px-3 py-2">
                     {onSelectDevice ? (
                       <button
                         type="button"
@@ -115,7 +118,7 @@ export function AlertTable({
                       <span className="font-mono text-[11px] text-text">{row.deviceName}</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5">
+                  <td className="whitespace-nowrap px-3 py-2">
                     {href ? (
                       <Link href={href} className="text-text hover:text-primary hover:underline">
                         {alertTypeLabel(row.type)}
@@ -127,16 +130,16 @@ export function AlertTable({
                       {row.type}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5">
+                  <td className="whitespace-nowrap px-3 py-2">
                     <SeverityPill severity={row.severity} compact />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5">
+                  <td className="whitespace-nowrap px-3 py-2">
                     <AlertStatusPill status={row.status} />
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular text-[11px] text-text-secondary">
+                  <td className="px-3 py-2 text-right font-mono tabular text-[11px] text-text-secondary">
                     {row.count}
                   </td>
-                  <td className="max-w-[320px] px-3 py-1.5 text-text-secondary">
+                  <td className="max-w-[320px] px-3 py-2 text-text-secondary">
                     <span className="line-clamp-1">{row.message}</span>
                   </td>
                 </tr>

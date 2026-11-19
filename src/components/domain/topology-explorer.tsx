@@ -52,7 +52,7 @@ export function TopologyExplorer({ graph }: { graph: TopologyGraph }) {
         </div>
       </div>
 
-      <aside className="rounded-[10px] border border-border bg-surface px-3 py-3">
+      <aside className="rounded-xl border border-border bg-surface shadow-card px-3 py-3">
         {selected ? (
           <div>
             <div className="flex items-center gap-2">

@@ -18,7 +18,7 @@ export default function IncidentDetailError({
 
   return (
     <div className="mx-auto max-w-[720px] py-16">
-      <div className="rounded-[12px] border border-border bg-surface px-6 py-8 text-center">
+      <div className="rounded-xl border border-border bg-surface px-6 py-8 text-center shadow-card">
         <p className="font-mono text-[15px] font-medium text-danger">INTERNAL</p>
         <h1 className="mt-1 text-[16px] font-medium">事件详情加载失败</h1>
         <p className="mx-auto mt-2 max-w-[440px] text-[12px] leading-5 text-text-secondary">

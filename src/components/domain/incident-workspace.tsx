@@ -50,7 +50,7 @@ export function IncidentWorkspace({
     <>
       <div className="grid min-h-[620px] grid-cols-1 gap-4 xl:grid-cols-[290px_minmax(0,1fr)_324px]">
         {/* 左：时间线 */}
-        <section className="flex min-h-0 flex-col rounded-[10px] border border-border bg-surface">
+        <section className="flex min-h-0 flex-col rounded-xl border border-border bg-surface shadow-card">
           <header className="flex items-center justify-between border-b border-border px-3 py-2">
             <h2 className="text-[13px] font-medium">时间线</h2>
             <span className="font-mono text-[10px] text-text-tertiary">
@@ -70,14 +70,14 @@ export function IncidentWorkspace({
 
         {/* 中：拓扑高亮 + 告警明细 */}
         <section className="flex min-h-0 flex-col gap-3">
-          <div className="rounded-[10px] border border-border bg-surface">
+          <div className="rounded-xl border border-border bg-surface shadow-card">
             <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2">
               <h2 className="text-[13px] font-medium">拓扑影响面</h2>
               <span className="font-mono text-[10px] text-text-tertiary">
                 受影响 {scope.affected.length} · 直连 {scope.neighbors.length}
               </span>
               <div className="ml-auto flex items-center gap-3 text-[10px] text-text-tertiary">
-                <Legend className="bg-[#FEF3F2] border-sev-p0" label="事件内" />
+                <Legend className="bg-danger-soft border-sev-p0" label="事件内" />
                 <Legend className="bg-surface border-border-strong" label="直连" />
                 <Legend className="bg-surface border-border" label="其它" />
               </div>
@@ -128,7 +128,7 @@ export function IncidentWorkspace({
         </section>
 
         {/* 右：处理动作 + 根因与证据 */}
-        <section className="min-h-0 space-y-3 overflow-auto rounded-[10px] border border-border bg-surface px-3 py-3">
+        <section className="min-h-0 space-y-3 overflow-auto rounded-xl border border-border bg-surface shadow-card px-3 py-3">
           <IncidentActions detail={detail} />
           <HypothesisPanel
             incidentId={detail.id}

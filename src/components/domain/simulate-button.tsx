@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Play } from 'lucide-react';
+import { buttonClass } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
 
 /**
@@ -56,11 +57,7 @@ export function SimulateButton({
         onClick={run}
         disabled={pending}
         className={cn(
-          'inline-flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12px] font-medium transition-colors',
-          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
-          variant === 'primary'
-            ? 'bg-primary text-text-inverse hover:bg-primary-hover'
-            : 'border border-border-strong bg-surface text-text-secondary hover:bg-surface-muted hover:text-text',
+          buttonClass({ variant, size: 'md' }),
           pending && 'cursor-progress opacity-70',
         )}
       >

@@ -146,13 +146,13 @@ export function ScenarioInject({
       </ul>
 
       {error ? (
-        <p className="mt-3 rounded-[6px] bg-[#FEF3F2] px-3 py-2 text-[12px] text-danger">
+        <p className="mt-3 rounded-[6px] bg-danger-soft px-3 py-2 text-[12px] text-danger">
           注入失败：{error}
         </p>
       ) : null}
 
       {result ? (
-        <div className="mt-3 rounded-[6px] bg-[#ECFDF3] px-3 py-2 text-[12px]">
+        <div className="mt-3 rounded-[6px] bg-ok-soft px-3 py-2 text-[12px]">
           <p className="text-ok">
             已注入 {result.alertTotal} 条告警，新建 {result.created} 个事件
             {result.title ? ` · ${result.title}` : ''}

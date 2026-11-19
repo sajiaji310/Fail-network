@@ -2,8 +2,9 @@ import Link from 'next/link';
 import type { IncidentStatus, Severity } from '@prisma/client';
 import { IncidentCard } from '@/components/domain/incident-card';
 import { SimulateButton } from '@/components/domain/simulate-button';
+import { SegmentedTabs } from '@/components/ui/tabs';
+import { buttonClass } from '@/components/ui/button';
 import { getIncidentStats, listIncidents } from '@/modules/incidents/service';
-import { cn } from '@/lib/utils/cn';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,7 @@ export default async function IncidentsPage({
     <div className="mx-auto max-w-[1180px]">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-medium tracking-tight">事件</h1>
+          <h1 className="text-[22px] leading-7 font-semibold tracking-tight">事件</h1>
           <p className="mt-0.5 text-[12px] text-text-secondary">
             告警按拓扑与时间聚合后的故障单元 · 共 {stats.total} 条，活跃 {stats.open} 条
           </p>
@@ -51,33 +52,24 @@ export default async function IncidentsPage({
         <SimulateButton label="注入演示故障" variant="ghost" reset />
       </header>
 
-      <nav className="mb-4 flex items-center gap-1 border-b border-border">
-        {TABS.map((t) => {
-          const active = t.key === tab.key;
-          const count =
-            t.key === 'active' ? stats.open : t.key === 'closed' ? stats.closed : stats.total;
-          return (
-            <Link
-              key={t.key}
-              href={t.key === 'active' ? '/incidents' : `/incidents?status=${t.key}`}
-              className={cn(
-                'relative -mb-px border-b-2 px-3 py-2 text-[13px] transition-colors',
-                active
-                  ? 'border-primary font-medium text-primary'
-                  : 'border-transparent text-text-secondary hover:text-text',
-              )}
-            >
-              {t.label}
-              <span className="ml-1.5 font-mono text-[10px] text-text-tertiary tabular">
-                {count}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <SegmentedTabs
+          activeKey={tab.key}
+          items={TABS.map((t) => ({
+            key: t.key,
+            label: t.label,
+            href: t.key === 'active' ? '/incidents' : `/incidents?status=${t.key}`,
+            count:
+              t.key === 'active' ? stats.open : t.key === 'closed' ? stats.closed : stats.total,
+          }))}
+        />
+        <span className="text-[11px] text-text-tertiary">
+          卡片左条为严重度 · 点进详情看研判结论
+        </span>
+      </div>
 
       {list.items.length === 0 ? (
-        <div className="rounded-[12px] border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
+        <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
           <p className="text-[14px] font-medium text-text">
             {stats.total === 0 ? '还没有任何事件' : '当前筛选下没有事件'}
           </p>
@@ -90,7 +82,7 @@ export default async function IncidentsPage({
             <SimulateButton label="注入演示故障" reset />
             <Link
               href={stats.total === 0 ? '/topology' : '/incidents?status=all'}
-              className="inline-flex h-8 items-center rounded-[6px] border border-border-strong bg-surface px-3 text-[12px] font-medium text-text-secondary hover:bg-surface-muted hover:text-text"
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
             >
               {stats.total === 0 ? '查看拓扑基线' : '查看全部事件'}
             </Link>

@@ -109,6 +109,16 @@
   - 聚合阈值：直接 import `constants.ts`，页面与代码不可能出现两份事实；只读，不做开关
   - 剧本注入：复用 `/api/v1/ingest/simulate`，与 `npm run sim` 同一个接口同一份 fixture，没有"演示专用通道"
 - [x] 测试 191 条（新增 27）：metrics 9 / report 7 / match 7 / fallback 3 / 其它改动内联
+- [x] **UI 设计统一（T09 验收后，用户提出"把 UI 设得高级点"）**：
+  - `globals.css` 换成冷中性灰 + 分层阴影（`shadow-card` / `shadow-pill`）+ 细描边的 `@theme` 令牌；补 Inter 字体栈
+  - 13 个文件里的硬编码浅底色（`bg-[#ECFDF3]` / `bg-[#FEF3F2]` / `bg-[#FFFAEB]` 等）全部收成 `ok-soft` / `danger-soft` / `warn-soft` 令牌，落实框架 12 节"组件内禁止硬编码色值"
+  - 卡片 / 状态徽标 / 分段筛选器 / 按钮收敛为共享组件：`ui/card.tsx`、`ui/status-pill.tsx`、`ui/tabs.tsx`（新建）、`ui/button.tsx`（新建）；事件卡片、案例卡片、三栏工作台、假设卡片、表格、拓扑节点统一到同一圆角与阴影规格
+  - 概览页去掉"盒中盒"嵌套描边，层次只靠底色；页头过时文案（"T01 工程基座验收用"）换成实际说明
+- [x] **同上发现的三个真实缺陷（不是样式问题）**：
+  - `hypothesis-panel.tsx` 里"规则引擎 · N 分钟前"的 `<time>` 漏了 `suppressHydrationWarning`，跨分钟时偶发 hydration mismatch → dev 左下角出现红色"1 Issue"浮层，截图里也带上了。其余 6 处相对时间都有防护，补齐后 console 干净
+  - 补 `src/app/icon.svg`，消掉 `/favicon.ico` 404
+  - 去掉 xyflow 的 `proOptions={{ hideAttribution: true }}`（Pro 授权项），保留官方 attribution，消除 console warning 与许可争议
+- [x] 截图重新生成 6 张（含 `eval-baseline.png` 元素特写），README 补一段界面设计说明
 
 ## T06 关键实测
 
@@ -284,6 +294,7 @@ curl -s localhost:3000/api/health | jq '{status,db,stage}'
    - 「聚合阈值」四组数值应与 `src/modules/correlation/constants.ts` 完全一致（成簇阈值 0.55、延续窗口 30 分钟、最大 2 跳…）
    - 「剧本注入」5 套剧本，勾「注入前清场」→ 点某个「注入」→ 出现绿色结果条 + 「打开事件」链接 → 点进去应看到新事件已研判
 7. 侧栏「设置」点了要能进页面（原来是个挂 `T09` 徽标的死链，点不动）
+8. 界面改版（本轮追加）：六个页面卡片圆角/阴影一致，分段筛选器是胶囊控件且选中态清楚，事件卡片有左色条；详情页左下角**不应有红色「1 Issue」开发浮层**；浏览器控制台无 hydration 报错 / 404 / 授权警告
 
 ## 阻塞
 
