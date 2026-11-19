@@ -1,0 +1,25 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: netscope-db
+    environment:
+      POSTGRES_USER: netscope
+      POSTGRES_PASSWORD: netscope
+      POSTGRES_DB: netscope
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U netscope']
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: netscope-app
+    ports: ['3000:3000']
+    env_file: .env
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  pgdata:

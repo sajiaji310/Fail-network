@@ -1,0 +1,33 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: netscope
+          POSTGRES_PASSWORD: netscope
+          POSTGRES_DB: netscope
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U netscope" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://netscope:netscope@localhost:5432/netscope
+      LLM_MOCK: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:push
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build

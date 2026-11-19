@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# env（.env.example 例外）
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# prisma
+prisma/migrations/*_draft/
+
+# test / coverage
+coverage/
+playwright-report/
+test-results/
+.vitest/
+
+# logs
+*.log
+logs/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# local tooling（便携版数据库不入库）
+.tools/
+.next-dev/
