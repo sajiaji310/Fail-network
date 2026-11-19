@@ -11,7 +11,8 @@ const PG_HOME = process.env.PG_HOME ?? 'E:/sinxiangmy/.tools/pg16';
 const PGDATA = process.env.PGDATA ?? 'E:/sinxiangmy/.tools/pgdata';
 const PGPORT = process.env.PGPORT ?? '5432';
 
-const bin = (name) => path.join(PG_HOME, 'bin', process.platform === 'win32' ? `${name}.exe` : name);
+const bin = (name) =>
+  path.join(PG_HOME, 'bin', process.platform === 'win32' ? `${name}.exe` : name);
 
 function run(name, args) {
   return spawnSync(bin(name), args, { stdio: 'inherit' });
@@ -31,7 +32,15 @@ switch (cmd) {
       console.log('[db] 已在运行');
       break;
     }
-    run('pg_ctl', ['-D', PGDATA, '-l', path.join(PGDATA, '..', 'pg.log'), '-o', `-p ${PGPORT}`, 'start']);
+    run('pg_ctl', [
+      '-D',
+      PGDATA,
+      '-l',
+      path.join(PGDATA, '..', 'pg.log'),
+      '-o',
+      `-p ${PGPORT}`,
+      'start',
+    ]);
     run('pg_isready', ['-h', '127.0.0.1', '-p', PGPORT]);
     break;
   }

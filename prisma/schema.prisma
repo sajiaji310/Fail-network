@@ -1,4 +1,6 @@
-// NetScope 数据模型 — T01 仅建连；T02 落全量模型（见 docs/PROJECT-FRAMEWORK.md 第 8 节）
+// NetScope 数据模型 — 严格对齐 docs/PROJECT-FRAMEWORK.md 第 8 节
+// 唯一偏差：CaseRecord.embedding 因本地便携版无 pgvector，降级为 String?（P1 切回 vector(1536)）
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,4 +8,200 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum DeviceType {
+  ROUTER
+  SWITCH
+  FIREWALL
+  LOAD_BALANCER
+  SERVER
+  ACCESS_POINT
+  LINK
+}
+
+enum Severity {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum AlertStatus {
+  ACTIVE
+  SUPPRESSED
+  RESOLVED
+}
+
+enum IncidentStatus {
+  OPEN
+  ANALYZING
+  LOCATED
+  MITIGATED
+  RESOLVED
+  CLOSED
+}
+
+enum LinkStatus {
+  UP
+  DOWN
+  DEGRADED
+}
+
+model Device {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  type      DeviceType
+  vendor    String?
+  model     String?
+  ip        String?
+  site      String?
+  layer     Int      @default(3) // 1 核心 2 汇聚 3 接入
+  createdAt DateTime @default(now())
+
+  fingerprints AlertFingerprint[]
+  changes      ChangeRecord[]
+  linksFrom    TopologyLink[]      @relation("src")
+  linksTo      TopologyLink[]      @relation("dst")
+
+  @@index([type, site])
+}
+
+model TopologyLink {
+  id        String     @id @default(cuid())
+  sourceId  String
+  targetId  String
+  bandwidth Int? // Mbps
+  status    LinkStatus @default(UP)
+  source    Device     @relation("src", fields: [sourceId], references: [id], onDelete: Cascade)
+  target    Device     @relation("dst", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId])
+  @@index([sourceId])
+  @@index([targetId])
+}
+
+// 指纹：稳定定义（什么设备出了什么类型的告警），无时间语义
+model AlertFingerprint {
+  id        String   @id @default(cuid())
+  signature String   @unique // sha1(deviceId|type|metric)
+  deviceId  String
+  type      String // LINK_DOWN / HIGH_LATENCY / PACKET_LOSS / CPU_HIGH ...
+  metric    String?
+  severity  Severity
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  alerts    Alert[]
+
+  @@index([deviceId, type])
+}
+
+// 发生：一次实际告警周期（30 分钟规则决定新建还是累加）
+model Alert {
+  id            String      @id @default(cuid())
+  fingerprintId String
+  severity      Severity
+  value         Float?
+  threshold     Float?
+  message       String
+  status        AlertStatus @default(ACTIVE)
+  count         Int         @default(1)
+  firstSeen     DateTime
+  lastSeen      DateTime
+  cycleStart    DateTime // = firstSeen，参与唯一约束
+  externalKey   String? // 外部系统告警 ID，导入幂等
+  raw           Json?
+  incidentId    String?
+
+  fingerprint AlertFingerprint @relation(fields: [fingerprintId], references: [id], onDelete: Cascade)
+  incident    Incident?        @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@unique([fingerprintId, cycleStart])
+  @@unique([externalKey])
+  @@index([status, lastSeen])
+  @@index([incidentId])
+}
+
+model ChangeRecord {
+  id        String   @id @default(cuid())
+  deviceId  String
+  kind      String // CONFIG / FIRMWARE / HARDWARE / CABLING
+  content   String
+  operator  String?
+  changedAt DateTime
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, changedAt])
+}
+
+model Incident {
+  id             String         @id @default(cuid())
+  code           String         @unique // INC-20261119-001
+  title          String
+  status         IncidentStatus @default(OPEN)
+  severity       Severity
+  summary        String? // AI 一句话结论
+  impactScope    String? // 影响面描述
+  startedAt      DateTime
+  locatedAt      DateTime?
+  resolvedAt     DateTime?
+  mttrSeconds    Int?
+  clusterKey     String?        @unique // sha1(排序后的 fingerprintId)
+  mergedIntoId   String? // B3 被并入的目标事件
+  reopenedFromId String? // B6 重开自哪个事件
+  reopenedCount  Int            @default(0)
+  closedReason   String? // MANUAL | AUTO_MERGED | AUTO_NOISE | AUTO_CLOSED
+  createdAt      DateTime       @default(now())
+
+  alerts     Alert[]
+  hypotheses Hypothesis[]
+  reports    Report[]
+  cases      CaseRecord[]
+
+  @@index([status, startedAt])
+  @@index([severity])
+}
+
+model Hypothesis {
+  id         String   @id @default(cuid())
+  incidentId String
+  rank       Int
+  cause      String
+  category   String // HARDWARE / CONFIG / LINK / CAPACITY / UPSTREAM / OTHER
+  confidence Float
+  evidence   Json // [{type:'ALERT'|'CHANGE'|'TOPOLOGY'|'CASE', ref:string, desc:string}]
+  verifySteps Json // string[]
+  actions    Json // [{action, risk:'LOW'|'MEDIUM'|'HIGH', requiresApproval:boolean}]
+  source     String // LLM | RULE_FALLBACK
+  model      String?
+  tokensUsed Int?
+  createdAt  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, rank])
+}
+
+model CaseRecord {
+  id         String   @id @default(cuid())
+  incidentId String   @unique
+  title      String
+  symptom    String
+  rootCause  String
+  resolution String
+  tags       String[]
+  /// P1: pgvector vector(1536)，MVP 本地无扩展故留空
+  embedding  String?
+  createdAt  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([title])
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  incidentId String
+  markdown   String
+  createdAt  DateTime @default(now())
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
 }

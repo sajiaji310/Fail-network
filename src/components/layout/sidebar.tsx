@@ -42,7 +42,9 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-2 py-3">
-        <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-text-tertiary">控制台</p>
+        <p className="px-2 pb-2 text-[11px] font-medium tracking-wider text-text-tertiary">
+          控制台
+        </p>
         <ul className="space-y-0.5">
           {NAV.map(({ href, label, icon: Icon, pendingCard }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
