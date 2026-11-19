@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import Link from 'next/link';
 import { Card, CardTitle } from '@/components/ui/card';
 import { StatusPill, type Tone } from '@/components/ui/status-pill';
 import { RefreshButton } from '@/components/domain/refresh-button';
@@ -13,7 +14,7 @@ const UPCOMING = [
   ['T03', '告警接入 + 模拟器', '已完成'],
   ['T04', '归一化 + 抑制 + 生命周期', '已完成'],
   ['T05', '关联聚合', '已完成'],
-  ['T06', '事件详情（只读拓扑）', '未开始'],
+  ['T06', '事件详情（只读拓扑）', '已完成'],
   ['T07', '根因研判', '未开始'],
   ['T08', '人工确认 + 简版报告', '未开始'],
   ['T09', '评测与发布', '未开始'],
@@ -186,13 +187,18 @@ export default async function OverviewPage() {
         {openList.items.length > 0 ? (
           <ul className="mt-3 divide-y divide-border rounded-[8px] border border-border">
             {openList.items.map((i) => (
-              <li key={i.id} className="flex items-center gap-2.5 px-3 py-2 text-[13px]">
-                <span className="font-mono text-[11px] text-text-tertiary">{i.code}</span>
-                <StatusPill tone={SEVERITY_TONE[i.severity] ?? 'muted'}>{i.severity}</StatusPill>
-                <span className="truncate text-text-secondary">{i.title}</span>
-                <span className="ml-auto shrink-0 font-mono text-[11px] text-text-tertiary">
-                  {i.alertCount} 条 / {i.deviceCount} 台 · {format(i.lastSeen, 'HH:mm')}
-                </span>
+              <li key={i.id}>
+                <Link
+                  href={`/incidents/${i.id}`}
+                  className="flex items-center gap-2.5 px-3 py-2 text-[13px] transition-colors hover:bg-surface-muted"
+                >
+                  <span className="font-mono text-[11px] text-text-tertiary">{i.code}</span>
+                  <StatusPill tone={SEVERITY_TONE[i.severity] ?? 'muted'}>{i.severity}</StatusPill>
+                  <span className="truncate text-text-secondary">{i.title}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-text-tertiary">
+                    {i.alertCount} 条 / {i.deviceCount} 台 · {format(i.lastSeen, 'HH:mm')}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -219,7 +225,7 @@ curl -s "localhost:3000/api/v1/incidents" | jq .`}
         </Card>
 
         <Card>
-          <CardTitle hint="已完成 4 / 8">任务卡进度</CardTitle>
+          <CardTitle hint="已完成 5 / 8">任务卡进度</CardTitle>
           <ul className="space-y-1.5">
             {UPCOMING.map(([id, title, state]) => (
               <li key={id} className="flex items-center gap-2.5 text-[13px]">

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createLogger } from '@/lib/logger';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { runScenario } from '@/modules/ingest/scenario';
+import { resetDemoData } from '@/modules/ingest/reset';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,8 @@ const BodySchema = z.object({
     .min(0)
     .max(2 ** 31)
     .optional(),
+  /** 先清空注入/聚合产生的数据再注入：逐个剧本验收时必须置 true，否则会并成 mega 事件 */
+  reset: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -30,7 +33,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const { scenario, seed } = parsed.data;
+    const { scenario, seed, reset } = parsed.data;
+    const resetSummary = reset ? await resetDemoData() : null;
     let result;
     try {
       result = await runScenario(scenario, seed);
@@ -55,6 +59,7 @@ export async function POST(req: Request) {
         runId: result.runId,
         alertTotal: result.alertTotal,
         changes: result.changes,
+        reset: resetSummary,
         accepted: result.ingest.accepted,
         deduped: result.ingest.deduped,
         suppressed: result.ingest.suppressed,

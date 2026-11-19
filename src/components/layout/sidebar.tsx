@@ -23,9 +23,9 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: '/overview', label: '概览', icon: Activity },
-  { href: '/alerts', label: '告警流', icon: BellRing, pendingCard: 'T03' },
-  { href: '/incidents', label: '事件', icon: TriangleAlert, pendingCard: 'T05' },
-  { href: '/topology', label: '拓扑', icon: Network, pendingCard: 'T06' },
+  { href: '/alerts', label: '告警流', icon: BellRing },
+  { href: '/incidents', label: '事件', icon: TriangleAlert },
+  { href: '/topology', label: '拓扑', icon: Network },
   { href: '/cases', label: '案例库', icon: BookOpen, pendingCard: 'T08' },
   { href: '/settings', label: '设置', icon: Settings, pendingCard: 'T09' },
 ];

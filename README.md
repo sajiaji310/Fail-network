@@ -2,7 +2,7 @@
 
 **把一堆告警变成一个带证据的结论。** 自动聚合告警 → 定位根因 → 给出证据链与处置建议 → 结案后沉淀为可复用案例。
 
-> 状态：MVP-0 开发中（T01 工程基座）。截图为验收里程碑产出，不接受占位图。
+> 状态：MVP-0 开发中（T06 事件工作台）。截图为验收里程碑产出，不接受占位图。
 
 ## 为什么做这个
 
@@ -47,6 +47,8 @@ npm run db:start
 npm run db:push && npm run db:seed
 npm run dev               # http://localhost:3000 → /overview
 
+# 页面（T06 起）：/alerts 告警流 · /incidents 事件 · /incidents/[id] 三栏工作台 · /topology 只读拓扑
+
 # 注入一套故障剧本（5 套可选；--reset 先清掉上次注入的数据）
 npm run sim -- --list
 npm run sim -- --scenario=core-switch-board-failure --reset
@@ -64,6 +66,10 @@ npm run corr:run
 告警列表：`curl -s "localhost:3000/api/v1/alerts?status=SUPPRESSED" | jq .`
 
 事件列表：`curl -s "localhost:3000/api/v1/incidents?status=OPEN" | jq .`
+
+事件详情：`curl -s "localhost:3000/api/v1/incidents/INC-20261119-001" | jq '{code, timeline: .timelineTotal}'`
+
+拓扑：`curl -s "localhost:3000/api/v1/topology" | jq '.stats'`
 
 手动触发聚合：`curl -s -X POST localhost:3000/api/v1/correlation/run | jq .`
 
