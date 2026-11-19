@@ -1,0 +1,95 @@
+{
+  "id": "dev-07",
+  "set": "dev",
+  "kind": "DISTRACTOR",
+  "title": "时间窗外的历史噪声",
+  "note": "干扰例：故障前一小时有两条孤立告警。它们不该被卷进本次事件，也不该拉低研判结论",
+  "scenario": {
+    "name": "dev-stale-noise",
+    "title": "核心线卡故障（含一小时前噪声）",
+    "description": "CORE-SW-01 线卡故障；ACC-SW-19 在一小时前有两条残留告警，与本次故障无关。",
+    "rootCauseHint": "CORE-SW-01 线卡硬件故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 88,
+        "threshold": 50,
+        "message": "终端侧时延轻微升高",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "PORT_FLAP",
+        "severity": "P3",
+        "metric": "flap_count",
+        "value": 3,
+        "threshold": 5,
+        "message": "端口抖动 3 次",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINECARD_FAILURE",
+        "severity": "P0",
+        "metric": "Slot3",
+        "message": "线卡 3 硬件故障",
+        "minuteFromStart": 60
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联 CORE-SW-01 端口 Down",
+        "minuteFromStart": 61
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 11.2,
+        "threshold": 1,
+        "message": "上联丢包率 11.2%",
+        "minuteFromStart": 62
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 8.6,
+        "threshold": 1,
+        "message": "上联丢包率 8.6%",
+        "minuteFromStart": 62
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P2",
+        "metric": "10.0.0.1",
+        "message": "BGP 邻居状态 Idle",
+        "minuteFromStart": 63
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 280,
+        "threshold": 50,
+        "message": "到网关时延 280ms",
+        "minuteFromStart": 64
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "LINECARD_FAILURE" }
+  }
+}

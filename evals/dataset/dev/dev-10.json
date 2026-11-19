@@ -1,0 +1,93 @@
+{
+  "id": "dev-10",
+  "set": "dev",
+  "kind": "DISTRACTOR",
+  "title": "父告警先到并压制子告警",
+  "note": "干扰例：DEVICE_UNREACHABLE 第 0 分钟就到，同设备子告警被抑制。考抑制后仍能定位到父告警本身",
+  "scenario": {
+    "name": "dev-parent-first",
+    "title": "核心交换机整机不可达（父告警先行）",
+    "description": "CORE-SW-01 主控异常整机不可达，端口/邻居类告警被压制，只有下游接入的丢包可见。",
+    "rootCauseHint": "CORE-SW-01 整机不可达",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "DEVICE_UNREACHABLE",
+        "severity": "P0",
+        "metric": "snmp",
+        "message": "SNMP 采集超时，整机无响应",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "CPU_HIGH",
+        "severity": "P1",
+        "metric": "cpu",
+        "value": 99,
+        "threshold": 80,
+        "message": "CPU 99%（采集前的最后读数）",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联 CORE-SW-01 端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P1",
+        "metric": "10.0.0.1",
+        "message": "BGP 邻居状态 Idle",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 16.2,
+        "threshold": 1,
+        "message": "上联丢包率 16.2%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 12.7,
+        "threshold": 1,
+        "message": "上联丢包率 12.7%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联 CORE-SW-01 端口 Down",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 410,
+        "threshold": 50,
+        "message": "到网关时延 410ms",
+        "minuteFromStart": 4
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "DEVICE_UNREACHABLE" }
+  }
+}

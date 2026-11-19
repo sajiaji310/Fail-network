@@ -1,0 +1,101 @@
+{
+  "id": "dev-06",
+  "set": "dev",
+  "kind": "POSITIVE",
+  "title": "跨厂商接入交换机光模块劣化",
+  "note": "换设备 + 换厂商变体（Ruijie 接入 + H3C 汇聚），考结论不依赖特定设备名或厂商",
+  "scenario": {
+    "name": "dev-vendor-optical",
+    "title": "锐捷接入交换机光模块劣化",
+    "description": "ACC-SW-12 光模块发送光功率衰减，上联反复抖动，汇聚侧出现 CRC 错误。",
+    "rootCauseHint": "ACC-SW-12 光模块故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-12",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -18.8,
+        "threshold": -16,
+        "message": "收光 -18.8dBm，低于门限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-12",
+        "type": "PORT_FLAP",
+        "severity": "P2",
+        "metric": "flap_count",
+        "value": 8,
+        "threshold": 5,
+        "message": "端口 10 分钟抖动 8 次",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-12",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 5.4,
+        "threshold": 1,
+        "message": "上联丢包率 5.4%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "CRC_ERROR",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/8",
+        "value": 920,
+        "threshold": 100,
+        "message": "端口 CRC 错误 920 个/5min",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-12",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 210,
+        "threshold": 50,
+        "message": "到网关时延 210ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 120,
+        "threshold": 50,
+        "message": "下挂终端时延升高",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-16",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 3.1,
+        "threshold": 1,
+        "message": "上联丢包率 3.1%",
+        "minuteFromStart": 5
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 95,
+        "threshold": 50,
+        "message": "共享上联时延轻微升高",
+        "minuteFromStart": 6
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "LINK", "device": "ACC-SW-12" },
+    "rootAlert": { "device": "ACC-SW-12", "type": "OPTICAL_RX_LOW" }
+  }
+}

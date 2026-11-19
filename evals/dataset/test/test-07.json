@@ -1,0 +1,58 @@
+{
+  "id": "test-07",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "未知采集项 + 事后变更",
+  "note": "对抗例（AC-20）：未知类型告警 + 一条发生在故障之后的变更。两条线索都不可用，必须给空结论",
+  "scenario": {
+    "name": "test-unknown-late-change",
+    "title": "未知指标越限，事后有人改了配置",
+    "description": "ACC-SW-15 上报三条未登记采集项；第 5 分钟值班人调整了该设备的 SNMP 采集间隔。",
+    "rootCauseHint": "无（信息不足）",
+    "changes": [
+      {
+        "deviceName": "ACC-SW-15",
+        "kind": "CONFIG",
+        "content": "调整 SNMP 采集间隔与 community",
+        "operator": "sunqi",
+        "minuteFromStart": 5
+      }
+    ],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-15",
+        "type": "UNKNOWN_SENSOR_A",
+        "severity": "P2",
+        "metric": "sensor_a",
+        "value": 66,
+        "threshold": 60,
+        "message": "采集项 A 越限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-15",
+        "type": "UNKNOWN_SENSOR_B",
+        "severity": "P2",
+        "metric": "sensor_b",
+        "value": 39,
+        "threshold": 30,
+        "message": "采集项 B 越限",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-15",
+        "type": "UNKNOWN_SENSOR_C",
+        "severity": "P3",
+        "metric": "sensor_c",
+        "value": 21,
+        "threshold": 10,
+        "message": "采集项 C 越限",
+        "minuteFromStart": 2
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": null
+  }
+}

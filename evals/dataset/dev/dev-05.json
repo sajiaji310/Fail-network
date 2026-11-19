@@ -1,0 +1,103 @@
+{
+  "id": "dev-05",
+  "set": "dev",
+  "kind": "POSITIVE",
+  "title": "汇聚交换机电源模块故障",
+  "note": "换层变体：同一套衍生逻辑搬到汇聚层，且父告警（DEVICE_UNREACHABLE）晚到，考根因不被父告警吃掉",
+  "scenario": {
+    "name": "dev-agg-power",
+    "title": "汇聚交换机电源模块故障",
+    "description": "AGG-SW-02 电源模块失效，整机保护性重启，下挂 6 台接入交换机丢包。",
+    "rootCauseHint": "AGG-SW-02 电源模块故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "POWER_SUPPLY_FAILURE",
+        "severity": "P1",
+        "metric": "PWR-2",
+        "message": "电源模块 2 失效，剩余单电源运行",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联 AGG-SW-02 端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联 AGG-SW-02 端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 14.2,
+        "threshold": 1,
+        "message": "上联丢包率 14.2%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-14",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 18.6,
+        "threshold": 1,
+        "message": "上联丢包率 18.6%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-18",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 340,
+        "threshold": 50,
+        "message": "到网关时延 340ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 2.2,
+        "threshold": 1,
+        "message": "邻居链路丢包 2.2%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-22",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 6.4,
+        "threshold": 1,
+        "message": "上联丢包率 6.4%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "DEVICE_UNREACHABLE",
+        "severity": "P0",
+        "metric": "snmp",
+        "message": "SNMP 采集超时，整机无响应",
+        "minuteFromStart": 6
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "AGG-SW-02" },
+    "rootAlert": { "device": "AGG-SW-02", "type": "POWER_SUPPLY_FAILURE" }
+  }
+}

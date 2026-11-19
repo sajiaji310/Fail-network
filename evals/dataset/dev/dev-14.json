@@ -1,0 +1,50 @@
+{
+  "id": "dev-14",
+  "set": "dev",
+  "kind": "ADVERSARIAL",
+  "title": "未知告警类型 + 无扩散",
+  "note": "对抗例（AC-20）：三条未登记类型的采集指标，单设备无边扩散。系统必须承认证据不足，不得编根因",
+  "scenario": {
+    "name": "dev-unknown-metrics",
+    "title": "单台接入交换机上报未知采集指标",
+    "description": "ACC-SW-20 上报三条未登记的采集项告警，无链路、无变更、无下游影响，现有规则无法归因。",
+    "rootCauseHint": "无（信息不足）",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_A",
+        "severity": "P2",
+        "metric": "sensor_a",
+        "value": 71,
+        "threshold": 60,
+        "message": "采集项 A 越限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_B",
+        "severity": "P2",
+        "metric": "sensor_b",
+        "value": 44,
+        "threshold": 30,
+        "message": "采集项 B 越限",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_C",
+        "severity": "P3",
+        "metric": "sensor_c",
+        "value": 18,
+        "threshold": 10,
+        "message": "采集项 C 越限",
+        "minuteFromStart": 2
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": null
+  }
+}

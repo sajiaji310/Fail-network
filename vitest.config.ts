@@ -16,7 +16,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}', 'tests/unit/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'evals/**/*.test.ts', 'tests/unit/**/*.test.ts'],
     exclude: ['node_modules', '.next', '.next-dev'],
     reporters: 'default',
     // DB 集成用例串行跑，避免并发抢唯一键

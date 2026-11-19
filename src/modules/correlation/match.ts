@@ -1,6 +1,6 @@
 import type { IncidentStatus, Severity } from '@prisma/client';
 import type { AlertCluster, ClusterAlert } from './cluster';
-import { CLUSTER_THRESHOLD, FOLLOWUP_LOOKBACK_MS } from './constants';
+import { CLUSTER_THRESHOLD, CONTINUATION_WINDOW_MS, FOLLOWUP_LOOKBACK_MS } from './constants';
 import { typeAffinity } from './affinity';
 import { canRelate, scorePair } from './scoring';
 import type { DeviceGraph } from './topology';
@@ -72,7 +72,13 @@ export type IncidentMatch = {
 
 /**
  * B5：簇与事件的最大关联分。
- * 时间距离超过 2 小时的不参与比较 —— 否则同一设备三天前的旧告警会把新故障并进老事件。
+ *
+ * 两个时间约束，缺一不可：
+ * 1) 锚点取事件内该告警的 **lastSeen**（还在持续的那条），不是 firstSeen ——
+ *    用 firstSeen 时，一场持续 10 分钟的故障，第 8 分钟的新告警与"第 0 分钟那条"相差 8 分钟，
+ *    时间项直接归零，只剩拓扑 0.45 + 类型 0.2 = 0.65，靠拓扑硬扛；一旦设备不同就掉到阈值下。
+ * 2) 新告警与锚点的间隔不得超过 30 分钟延续窗。同设备 + 同类型的光靠公式能拿 0.65，
+ *    没有这道闸门，100 分钟后的第二次发生会被并进上一场故障（AC-14 失败）。
  */
 export function scoreClusterAgainstIncident(
   cluster: AlertCluster,
@@ -93,10 +99,11 @@ export function scoreClusterAgainstIncident(
     for (const b of incident.alerts) {
       // 锚点必须落在 [now-2h, now]：只设下界会把"晚于聚合时刻"的告警也当成锚点，
       // 历史基准的集成测试会因此把当天的事件并进来
-      const at = b.firstSeen.getTime();
-      if (at < horizon || at > ceiling) continue;
+      const anchorMs = b.lastSeen.getTime();
+      if (anchorMs < horizon || anchorMs > ceiling) continue;
+      if (Math.abs(a.firstSeen.getTime() - anchorMs) > CONTINUATION_WINDOW_MS) continue;
       if (!canRelate(graph, a, b)) continue;
-      const score = scorePair(graph, a, b);
+      const score = scorePair(graph, a, { ...b, firstSeen: b.lastSeen });
       if (score > best) best = score;
     }
   }
@@ -125,6 +132,52 @@ export function bestIncidentAboveThreshold(
 ): IncidentMatch | null {
   const first = matches[0];
   return first && first.score >= CLUSTER_THRESHOLD ? first : null;
+}
+
+/**
+ * B5 跨窗口延续：同一设备簇在事件最近上报后 30 分钟内再现。
+ *
+ * 与 `scoreClusterAgainstIncident` 的分工：那边是"两条告警像不像同一个故障"（5 分钟窗打分），
+ * 这边是"同一场故障还在继续"（共享设备 + 时间连续）。静默跨窗口的持续故障必须走这条路，
+ * 否则时间项归零后分数必然掉到阈值下，被拆成两个事件。
+ */
+export function findContinuation(
+  cluster: AlertCluster,
+  incidents: readonly LoadedIncident[],
+  graph: DeviceGraph,
+  now: Date,
+): LoadedIncident | null {
+  const clusterStart = cluster.alerts.reduce(
+    (min, a) => (a.firstSeen.getTime() < min ? a.firstSeen.getTime() : min),
+    cluster.alerts[0]?.firstSeen.getTime() ?? now.getTime(),
+  );
+
+  let best: { incident: LoadedIncident; gap: number; score: number } | null = null;
+  for (const incident of incidents) {
+    const lastSeenMs = incident.lastSeen.getTime();
+    if (lastSeenMs > now.getTime()) continue;
+    const gap = Math.abs(clusterStart - lastSeenMs);
+    if (gap > CONTINUATION_WINDOW_MS) continue;
+
+    // 时间项按 30 分钟归一化，而不是 5 分钟窗口：这条判定问的是"还在继续吗"，
+    // 不是"像不像同一个 5 分钟内的告警"。
+    let score = 0;
+    for (const a of cluster.alerts) {
+      for (const b of incident.alerts) {
+        if (!canRelate(graph, a, b)) continue;
+        const candidate = scorePair(
+          graph,
+          a,
+          { ...b, firstSeen: incident.lastSeen },
+          CONTINUATION_WINDOW_MS,
+        );
+        if (candidate > score) score = candidate;
+      }
+    }
+    if (score < CLUSTER_THRESHOLD) continue;
+    if (!best || gap < best.gap) best = { incident, gap, score };
+  }
+  return best?.incident ?? null;
 }
 
 /**

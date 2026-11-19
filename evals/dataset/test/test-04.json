@@ -1,0 +1,61 @@
+{
+  "id": "test-04",
+  "set": "test",
+  "kind": "POSITIVE",
+  "title": "DNS 解析超时（影响面窄）",
+  "note": "正例变体：只有 4 台设备上报解析超时，考在低信号场景下仍能归到上游 DNS",
+  "scenario": {
+    "name": "test-dns-small",
+    "title": "上游 DNS 抖动导致小范围解析超时",
+    "description": "上游 DNS 响应抖动，只有 4 台设备触发解析超时阈值，链路指标正常。",
+    "rootCauseHint": "上游 DNS 递归服务器抖动",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "DNS_TIMEOUT",
+        "severity": "P1",
+        "metric": "dns_rtt",
+        "value": 4200,
+        "threshold": 200,
+        "message": "DNS 解析耗时 4.2s",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-03",
+        "type": "DNS_TIMEOUT",
+        "severity": "P2",
+        "metric": "dns_rtt",
+        "value": 3900,
+        "threshold": 200,
+        "message": "终端解析超时",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "DNS_TIMEOUT",
+        "severity": "P2",
+        "metric": "dns_rtt",
+        "value": 4400,
+        "threshold": 200,
+        "message": "终端解析超时",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "DNS_TIMEOUT",
+        "severity": "P3",
+        "metric": "dns_rtt",
+        "value": 2100,
+        "threshold": 200,
+        "message": "转发侧解析变慢",
+        "minuteFromStart": 3
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "UPSTREAM", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "DNS_TIMEOUT" }
+  }
+}

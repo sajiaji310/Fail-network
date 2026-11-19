@@ -67,3 +67,65 @@ describe('fallback 与校验器自洽', () => {
     expect(verified.stats.relevanceRate).toBe(1);
   });
 });
+
+/**
+ * T09 评测驱动的两处修正（dev 集里 5 个正例/干扰例因此从"空结论"变成命中）。
+ * 这两条容易在后续调参里被无意改回去，所以锁在单测里。
+ */
+describe('弱信号场景的召回（T09 修正）', () => {
+  const base = ctx.alerts[0]!;
+
+  it('DNS_TIMEOUT 归类 UPSTREAM，不跟随 QUALITY 族判成 LINK', () => {
+    const dnsCtx = {
+      ...ctx,
+      changes: [],
+      cases: [],
+      alerts: [{ ...base, id: 'alert-dns', type: 'DNS_TIMEOUT', alertClass: 'CHILD' as const }],
+    };
+    const result = ruleFallback(dnsCtx);
+    expect(result.hypotheses[0]?.category).toBe('UPSTREAM');
+  });
+
+  it('只有「直连受影响设备」这一条信号时也要给结论', () => {
+    const weakCtx = {
+      ...ctx,
+      changes: [],
+      cases: [],
+      alerts: [{ ...base, alertClass: 'CHILD' as const }],
+    };
+    expect(ruleFallback(weakCtx).hypotheses.length).toBeGreaterThan(0);
+  });
+
+  it('孤立单设备 + 未登记类型 → 仍给空结论（AC-20）', () => {
+    const isolated = {
+      ...ctx,
+      changes: [],
+      cases: [],
+      links: [],
+      nodes: ctx.nodes.filter((node) => node.id === base.deviceId),
+      alerts: [
+        {
+          ...base,
+          id: 'alert-unknown',
+          type: 'UNKNOWN_SENSOR_A',
+          alertClass: 'UNKNOWN' as const,
+        },
+      ],
+    };
+    expect(ruleFallback(isolated).hypotheses).toHaveLength(0);
+  });
+
+  it('孤立单设备但类型已知 → 给出结论（事件内唯一设备就是嫌疑）', () => {
+    const isolated = {
+      ...ctx,
+      changes: [],
+      cases: [],
+      links: [],
+      nodes: ctx.nodes.filter((node) => node.id === base.deviceId),
+      alerts: [{ ...base, alertClass: 'CHILD' as const }],
+    };
+    const result = ruleFallback(isolated);
+    expect(result.hypotheses).toHaveLength(1);
+    expect(result.hypotheses[0]?.evidence[0]?.ref).toBe(base.id);
+  });
+});

@@ -1,0 +1,89 @@
+{
+  "id": "test-08",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "拓扑全缺失：核心到四台汇聚的链路都没采到",
+  "note": "对抗例：核心与所有汇聚在拓扑上断开。量化「完全没有拓扑数据」时聚合能力退化到什么程度",
+  "scenario": {
+    "name": "test-no-topology",
+    "title": "核心线卡故障（核心到汇聚链路全部缺失）",
+    "description": "CORE-SW-01 线卡故障，四台汇聚全部报上联 Down，但网管里核心到汇聚的四条链路都不存在。",
+    "rootCauseHint": "CORE-SW-01 线卡硬件故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINECARD_FAILURE",
+        "severity": "P0",
+        "metric": "Slot3",
+        "message": "线卡 3 硬件故障",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 12.5,
+        "threshold": 1,
+        "message": "上联丢包率 12.5%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 8.9,
+        "threshold": 1,
+        "message": "上联丢包率 8.9%",
+        "minuteFromStart": 3
+      }
+    ]
+  },
+  "mutations": {
+    "removeLinks": [
+      "CORE-SW-01|AGG-SW-01",
+      "CORE-SW-01|AGG-SW-02",
+      "CORE-SW-01|AGG-SW-03",
+      "CORE-SW-01|AGG-SW-04"
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "LINECARD_FAILURE" }
+  }
+}

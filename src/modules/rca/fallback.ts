@@ -1,4 +1,5 @@
 import { alertTypeLabel, deviceLayerLabel } from '@/modules/alerts/labels';
+import { classifyAlertType } from '@/modules/alerts/taxonomy';
 import { familyOf } from '@/modules/correlation/affinity';
 import type { AnalysisResult, HypothesisCategory, HypothesisDraft } from './schema';
 import type { ContextAlert, ContextBundle, ContextChange } from './context';
@@ -14,8 +15,27 @@ import type { ContextAlert, ContextBundle, ContextChange } from './context';
  * 这样它既能给无 key 环境兜底，也能在评测里当"基线模型"跟 LLM 对比。
  */
 
-const WEIGHT = { CHANGE: 40, CHANGE_NEIGHBOR: 20, ADJACENT: 30, TYPE: 20, CASE: 10 } as const;
-const MIN_CANDIDATE_SCORE = 40;
+const WEIGHT = {
+  CHANGE: 40,
+  CHANGE_NEIGHBOR: 20,
+  ADJACENT: 30,
+  SELF: 15,
+  TYPE: 20,
+  CASE: 10,
+} as const;
+/**
+ * 候选分下限（T09 评测后从 40 调到 20）。
+ *
+ * 原值 40 隐含要求"至少有一条强信号"：变更(40) 或 直连(30)+设备级告警(20)。
+ * 但纯链路/质量类故障（光模块劣化、端口抖动、解析超时）根本没有设备级告警，
+ * 最高只能拿到 直连 30 + CHILD 8 = 38，于是整类场景一律返回空结论。
+ * 评测集 dev-02/04/06/08/11 全部因此失败 —— 这不是"谨慎"，是把一类故障判死了。
+ *
+ * 20 = 自身在事件内的基准分。语义变成：**事件内每台有可解释告警的设备都是嫌疑**，
+ * 由分数排序决定谁排第一，而不是先一刀切掉大半。
+ * 噪声仍挡得住：告警类型未登记的设备拿不到 SELF 分，孤立单设备只有 4 分（AC-20）。
+ */
+const MIN_CANDIDATE_SCORE = 20;
 
 const CLASS_SCORE = { ROOT: 20, PARENT: 16, CHILD: 8, UNKNOWN: 4 } as const;
 const CLASS_RANK = { ROOT: 3, PARENT: 2, CHILD: 1, UNKNOWN: 0 } as const;
@@ -27,6 +47,10 @@ type Candidate = {
   layer: number;
   alert: ContextAlert | null;
   change: ContextChange | null;
+  /** 该设备在本事件里的告警条数：同分时用它决定谁更像故障源 */
+  alertCount: number;
+  /** 该设备最高告警等级：条数也一样时，P1 比 P3 更像根因 */
+  severity: ContextAlert['severity'];
   score: number;
   reasons: string[];
 };
@@ -51,6 +75,9 @@ function categoryOf(alert: ContextAlert | null, change: ContextChange | null): H
   if (change) return 'CONFIG';
   if (!alert) return 'OTHER';
   if (alert.alertClass === 'ROOT' || alert.alertClass === 'PARENT') return 'HARDWARE';
+  // DNS 超时被归在 QUALITY 族（与丢包/时延同族），但它的故障源几乎总在上游递归服务器，
+  // 归成 LINK 会把运维引向排查内网链路 —— 评测集 dev-04/test-04 都是这么错的。
+  if (alert.type.trim().toUpperCase() === 'DNS_TIMEOUT') return 'UPSTREAM';
   const family = familyOf(alert.type);
   if (family === 'LINK') return 'LINK';
   if (family === 'ROUTING') return 'UPSTREAM';
@@ -138,6 +165,11 @@ function actionsOf(category: HypothesisCategory, deviceName: string): Hypothesis
   return [{ action: '持续观察 2 个采集周期并补充指标', risk: 'LOW', requiresApproval: false }];
 }
 
+/** 类型是否"可解释"：已登记进分类表或告警族表。未登记的类型不构成证据（AC-20 靠它兜底） */
+function isExplained(type: string): boolean {
+  return classifyAlertType(type) !== 'UNKNOWN' || familyOf(type) !== 'OTHER';
+}
+
 export function ruleFallback(ctx: ContextBundle): AnalysisResult {
   const alertsByDevice = new Map<string, ContextAlert[]>();
   for (const alert of ctx.alerts) {
@@ -197,6 +229,15 @@ export function ruleFallback(ctx: ContextBundle): AnalysisResult {
     if (alert) {
       score += CLASS_SCORE[alert.alertClass];
       reasons.push(`${alert.alertClass} 类告警`);
+      // 自身就在事件里：这是"嫌疑"的底线，不是结论。没有它，纯链路类故障（无设备级告警）
+      // 会连候选都进不来。两条排除：
+      //  - 未登记类型不给分（那是"看不懂"，不是"可疑"，AC-20 靠它兜底）
+      //  - ROOT/PARENT 告警已经拿了 20/16 分，不再叠加，否则设备级故障会把
+      //    "变更 + 直连"的最高分（40+30）压下去，ACL 类根因就排不到第一了
+      if (isExplained(alert.type) && alert.alertClass !== 'ROOT' && alert.alertClass !== 'PARENT') {
+        score += WEIGHT.SELF;
+        reasons.push('事件内设备');
+      }
     }
 
     if (ctx.cases.length > 0 && (alert?.alertClass === 'ROOT' || alert?.alertClass === 'PARENT')) {
@@ -211,12 +252,24 @@ export function ruleFallback(ctx: ContextBundle): AnalysisResult {
       layer: node?.layer ?? 3,
       alert,
       change,
+      alertCount: alerts.length,
+      severity: alert?.severity ?? 'P3',
       score: Math.min(score, WEIGHT.CHANGE + WEIGHT.ADJACENT + WEIGHT.TYPE + WEIGHT.CASE),
       reasons,
     });
   }
 
-  candidates.sort((a, b) => b.score - a.score || a.deviceName.localeCompare(b.deviceName));
+  // 同分时的决胜顺序：告警更多（更像故障源）→ 最高等级更高 → 告警类别更高 → 名字（确定性）
+  // 只看分数会让「对端设备」和「故障设备」并列：光模块场景里 AGG 与 ACC 都是 38 分，
+  // 按名字序会把汇聚排前面，结论从"某个接入的光模块"变成"汇聚异常"。
+  candidates.sort(
+    (a, b) =>
+      b.score - a.score ||
+      b.alertCount - a.alertCount ||
+      SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] ||
+      CLASS_RANK[b.alert?.alertClass ?? 'UNKNOWN'] - CLASS_RANK[a.alert?.alertClass ?? 'UNKNOWN'] ||
+      a.deviceName.localeCompare(b.deviceName),
+  );
   const top = candidates.slice(0, 3);
 
   if (top.length === 0) {

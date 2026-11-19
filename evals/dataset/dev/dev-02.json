@@ -1,0 +1,120 @@
+{
+  "id": "dev-02",
+  "set": "dev",
+  "kind": "POSITIVE",
+  "title": "上联光模块劣化",
+  "note": "无设备级 ROOT 告警，只有光层与质量类告警；考规则引擎在纯链路劣化场景能否给出结论",
+  "scenario": {
+    "name": "dev-optical-degradation",
+    "title": "上联光模块劣化导致链路抖动",
+    "description": "ACC-SW-07 上联光模块收光持续劣化，端口反复 renegotiation。",
+    "rootCauseHint": "ACC-SW-07 上联光模块收光功率不足",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -19.2,
+        "threshold": -16,
+        "message": "收光功率 -19.2dBm，低于门限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P3",
+        "metric": "rx_power",
+        "value": -17.5,
+        "threshold": -16,
+        "message": "对端收光 -17.5dBm，接近门限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "LINK_DOWN",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "count": 4,
+        "message": "上联端口 4 次 Down（每次 3~8s 自愈）",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 6.2,
+        "threshold": 1,
+        "message": "上联丢包率 6.2%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "CRC_ERROR",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/12",
+        "value": 1840,
+        "threshold": 100,
+        "message": "端口 CRC 错误 1840 个/5min",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 180,
+        "threshold": 50,
+        "message": "到网关时延 180ms",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "PORT_FLAP",
+        "severity": "P2",
+        "metric": "flap_count",
+        "value": 11,
+        "threshold": 5,
+        "message": "端口 10 分钟内抖动 11 次",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-03",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 90,
+        "threshold": 50,
+        "message": "下挂终端时延升高",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-11",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 2.1,
+        "threshold": 1,
+        "message": "上联丢包率 2.1%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 75,
+        "threshold": 50,
+        "message": "共享上联时延轻微升高",
+        "minuteFromStart": 5
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "LINK", "device": "ACC-SW-07" },
+    "rootAlert": { "device": "ACC-SW-07", "type": "OPTICAL_RX_LOW" }
+  }
+}

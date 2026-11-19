@@ -1,0 +1,75 @@
+{
+  "id": "dev-15",
+  "set": "dev",
+  "kind": "ADVERSARIAL",
+  "title": "跨窗口持续（AC-15）",
+  "note": "对抗例：告警跨越两个 5 分钟窗口持续上报。必须沿用同一个事件，不得因窗口切换拆成两个",
+  "scenario": {
+    "name": "dev-cross-window",
+    "title": "核心线卡故障持续跨窗口",
+    "description": "同一故障在 0~1 分钟与 7~9 分钟各报一批，中间静默 6 分钟。",
+    "rootCauseHint": "CORE-SW-01 线卡硬件故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINECARD_FAILURE",
+        "severity": "P0",
+        "metric": "Slot3",
+        "message": "线卡 3 硬件故障",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 13.4,
+        "threshold": 1,
+        "message": "上联丢包率 13.4%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 10.2,
+        "threshold": 1,
+        "message": "上联丢包率 10.2%",
+        "minuteFromStart": 7
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 290,
+        "threshold": 50,
+        "message": "到网关时延 290ms",
+        "minuteFromStart": 8
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P2",
+        "metric": "10.0.0.1",
+        "message": "BGP 邻居状态 Idle",
+        "minuteFromStart": 9
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "LINECARD_FAILURE" }
+  }
+}

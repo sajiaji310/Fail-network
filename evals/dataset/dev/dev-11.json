@@ -1,0 +1,149 @@
+{
+  "id": "dev-11",
+  "set": "dev",
+  "kind": "DISTRACTOR",
+  "title": "汇聚端口故障引发大面积丢包",
+  "note": "干扰例：13 条告警里有 12 条是接入侧丢包，只有 1 条是汇聚端口故障。考不被多数派带偏",
+  "scenario": {
+    "name": "dev-agg-port",
+    "title": "汇聚上行端口故障，下挂六台接入丢包",
+    "description": "AGG-SW-02 上行端口抖动后 Down，下挂与备挂的 12 台接入交换机全部丢包。",
+    "rootCauseHint": "AGG-SW-02 上行端口故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上行端口 Down",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "PORT_FLAP",
+        "severity": "P2",
+        "metric": "flap_count",
+        "value": 7,
+        "threshold": 5,
+        "message": "端口抖动 7 次",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu",
+        "value": 86,
+        "threshold": 80,
+        "message": "CPU 86%（转发表刷新）",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 6.2,
+        "threshold": 1,
+        "message": "上联丢包率 6.2%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 5.4,
+        "threshold": 1,
+        "message": "上联丢包率 5.4%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 7.8,
+        "threshold": 1,
+        "message": "上联丢包率 7.8%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-14",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 9.1,
+        "threshold": 1,
+        "message": "上联丢包率 9.1%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-18",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 4.7,
+        "threshold": 1,
+        "message": "上联丢包率 4.7%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-22",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 8.3,
+        "threshold": 1,
+        "message": "上联丢包率 8.3%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 5.9,
+        "threshold": 1,
+        "message": "备上联丢包率 5.9%",
+        "minuteFromStart": 5
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 3.8,
+        "threshold": 1,
+        "message": "备上联丢包率 3.8%",
+        "minuteFromStart": 5
+      },
+      {
+        "deviceName": "ACC-SW-09",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 130,
+        "threshold": 50,
+        "message": "到网关时延 130ms",
+        "minuteFromStart": 6
+      },
+      {
+        "deviceName": "ACC-SW-13",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 145,
+        "threshold": 50,
+        "message": "到网关时延 145ms",
+        "minuteFromStart": 6
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "LINK", "device": "AGG-SW-02" },
+    "rootAlert": { "device": "AGG-SW-02", "type": "LINK_DOWN" }
+  }
+}

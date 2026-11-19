@@ -172,14 +172,20 @@ export type SimulateResult = {
   correlation: CorrelationSummary;
 };
 
-/** 剧本注入：落告警 + 变更记录，然后立即聚合出事件（T05） */
-export async function runScenario(name: string, seed?: number): Promise<SimulateResult> {
-  const spec = loadScenario(name);
-  const materialized = materialize(spec, { seed });
-  const ingest = await ingestAlerts(`sim:${name}`, materialized.alerts);
+/**
+ * 用内存里的剧本规格直接注入（不读文件）。
+ * 评测集需要"剧本 + 变体"的场景，走文件会逼评测去生成临时 JSON，故单独暴露这一层。
+ */
+export async function runScenarioSpec(
+  spec: ScenarioSpec,
+  opts: { seed?: number; now?: Date; source?: string } = {},
+): Promise<SimulateResult> {
+  const materialized = materialize(spec, { seed: opts.seed, now: opts.now });
+  const source = opts.source ?? `sim:${spec.name}`;
+  const ingest = await ingestAlerts(source, materialized.alerts);
   const changes = await writeChanges(materialized.changes);
 
-  const correlation = await runCorrelation();
+  const correlation = await runCorrelation(opts.now);
   const incidentIds = [
     ...new Set([
       ...correlation.created.map((i) => i.id),
@@ -198,4 +204,9 @@ export async function runScenario(name: string, seed?: number): Promise<Simulate
     incidentIds,
     correlation,
   };
+}
+
+/** 剧本注入：落告警 + 变更记录，然后立即聚合出事件（T05） */
+export async function runScenario(name: string, seed?: number): Promise<SimulateResult> {
+  return runScenarioSpec(loadScenario(name), { seed });
 }

@@ -25,6 +25,15 @@ export const CLUSTER_WINDOW_MS = 5 * 60 * 1000;
 /** B5 跨窗口：沿用一个未结事件时，只回看它最近 2 小时内的告警 */
 export const FOLLOWUP_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * B5 延续窗口：同一设备簇的告警在事件最近上报后 30 分钟内再现，直接沿用该事件。
+ *
+ * 为什么不能只靠打分：scorePair 的时间项以 firstSeen 为锚，静默 6 分钟就超过 5 分钟窗，
+ * 时间项归零后拓扑 0.225 + 类型 0.175 = 0.40 < 0.55，同一场故障会被拆成两个事件。
+ * 30 分钟与告警周期（AC-13/14）对齐，超过它才认为是"又一次发生"。
+ */
+export const CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
+
 /** B6 结案后重开窗口 */
 export const REOPEN_WINDOW_MS = 30 * 60 * 1000;
 

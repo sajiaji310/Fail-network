@@ -1,0 +1,101 @@
+{
+  "id": "dev-08",
+  "set": "dev",
+  "kind": "DISTRACTOR",
+  "title": "资源过载而非光层故障",
+  "note": "干扰例：表面症状与光模块劣化几乎一样（丢包 + 时延），但证据指向资源耗尽，考类别判别",
+  "scenario": {
+    "name": "dev-session-exhaustion",
+    "title": "汇聚会话表耗尽导致丢包",
+    "description": "AGG-SW-01 会话表打满，转发性能下降，下挂接入出现丢包与时延。链路与光层指标正常。",
+    "rootCauseHint": "AGG-SW-01 会话表耗尽",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "SESSION_HIGH",
+        "severity": "P2",
+        "metric": "session",
+        "value": 98,
+        "threshold": 85,
+        "message": "会话表使用率 98%",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu",
+        "value": 88,
+        "threshold": 80,
+        "message": "CPU 88%（会话老化不足）",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "MEMORY_HIGH",
+        "severity": "P3",
+        "metric": "mem",
+        "value": 82,
+        "threshold": 80,
+        "message": "内存 82%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 7.4,
+        "threshold": 1,
+        "message": "上联丢包率 7.4%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 9.1,
+        "threshold": 1,
+        "message": "上联丢包率 9.1%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-09",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 220,
+        "threshold": 50,
+        "message": "到网关时延 220ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-13",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 4.2,
+        "threshold": 1,
+        "message": "上联丢包率 4.2%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-17",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 160,
+        "threshold": 50,
+        "message": "到网关时延 160ms",
+        "minuteFromStart": 5
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "CAPACITY", "device": "AGG-SW-01" },
+    "rootAlert": { "device": "AGG-SW-01", "type": "SESSION_HIGH" }
+  }
+}

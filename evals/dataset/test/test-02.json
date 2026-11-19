@@ -1,0 +1,89 @@
+{
+  "id": "test-02",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "变更早于首个告警 20 分钟",
+  "note": "对抗例：变更离故障更远（20 分钟前），考「变更先于告警」的时间关系而不是「时间接近」",
+  "scenario": {
+    "name": "test-acl-earlier",
+    "title": "ACL 变更 20 分钟后业务开始超时",
+    "description": "CORE-SW-01 提前 20 分钟下发了 ACL 变更，规则命中在业务高峰才显现。",
+    "rootCauseHint": "CORE-SW-01 ACL 规则顺序错误",
+    "changes": [
+      {
+        "deviceName": "CORE-SW-01",
+        "kind": "CONFIG",
+        "content": "批量下发 ACL 3100 规则，deny 10.0.3.0/24 置于 permit any 之前",
+        "operator": "wangfang",
+        "minuteFromStart": 0
+      }
+    ],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "ACL_DENY_HIT",
+        "severity": "P1",
+        "metric": "acl_3100",
+        "value": 3100,
+        "threshold": 100,
+        "message": "ACL 3100 命中 deny 3100 次/分钟",
+        "minuteFromStart": 20
+      },
+      {
+        "deviceName": "ACC-SW-04",
+        "type": "HIGH_LATENCY",
+        "severity": "P1",
+        "metric": "rtt",
+        "value": 5000,
+        "threshold": 50,
+        "message": "业务访问超时",
+        "minuteFromStart": 21
+      },
+      {
+        "deviceName": "ACC-SW-08",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 3400,
+        "threshold": 50,
+        "message": "接口调用超时",
+        "minuteFromStart": 21
+      },
+      {
+        "deviceName": "ACC-SW-12",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 3900,
+        "threshold": 50,
+        "message": "业务访问超时",
+        "minuteFromStart": 22
+      },
+      {
+        "deviceName": "ACC-SW-16",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 2.8,
+        "threshold": 1,
+        "message": "会话重试导致丢包",
+        "minuteFromStart": 23
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu",
+        "value": 85,
+        "threshold": 80,
+        "message": "CPU 85%（ACL 逐包匹配）",
+        "minuteFromStart": 24
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "CONFIG", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "ACL_DENY_HIT" }
+  }
+}

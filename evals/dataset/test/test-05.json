@@ -1,0 +1,93 @@
+{
+  "id": "test-05",
+  "set": "test",
+  "kind": "DISTRACTOR",
+  "title": "变更发生在故障之后",
+  "note": "干扰例：故障恢复过程中有人做了一次配置变更（第 6 分钟）。后发生的变更不能当原因",
+  "scenario": {
+    "name": "test-late-change",
+    "title": "核心线卡故障后有人尝试改配置",
+    "description": "线卡在第 0 分钟故障，值班人在第 6 分钟调整了 AGG-SW-03 的端口配置尝试恢复。",
+    "rootCauseHint": "CORE-SW-01 线卡硬件故障",
+    "changes": [
+      {
+        "deviceName": "AGG-SW-03",
+        "kind": "CONFIG",
+        "content": "临时关闭上联端口 STP 并调整 MTU 尝试恢复",
+        "operator": "zhaolei",
+        "minuteFromStart": 6
+      }
+    ],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINECARD_FAILURE",
+        "severity": "P0",
+        "metric": "Slot3",
+        "message": "线卡 3 硬件故障",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 11.9,
+        "threshold": 1,
+        "message": "上联丢包率 11.9%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 8.4,
+        "threshold": 1,
+        "message": "上联丢包率 8.4%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 310,
+        "threshold": 50,
+        "message": "到网关时延 310ms",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-14",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 14.6,
+        "threshold": 1,
+        "message": "上联丢包率 14.6%",
+        "minuteFromStart": 5
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "LINECARD_FAILURE" }
+  }
+}

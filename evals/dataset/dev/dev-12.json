@@ -1,0 +1,38 @@
+{
+  "id": "dev-12",
+  "set": "dev",
+  "kind": "ADVERSARIAL",
+  "title": "单端口故障（不足最小事件规模）",
+  "note": "对抗例：2 条告警达不到 3 条的成事件门槛。系统必须不建事件，而不是为了有产出硬造一个",
+  "scenario": {
+    "name": "dev-single-port",
+    "title": "单台接入交换机端口 Down",
+    "description": "ACC-SW-24 一个业务口 Down，无扩散。属于日常噪声，不应升级为事件。",
+    "rootCauseHint": "无（噪声，不足成事件）",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-24",
+        "type": "PORT_DOWN",
+        "severity": "P3",
+        "metric": "Gi1/0/12",
+        "message": "端口 Gi1/0/12 Down",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-24",
+        "type": "INTERFACE_ERROR",
+        "severity": "P3",
+        "metric": "Gi1/0/12",
+        "value": 42,
+        "threshold": 10,
+        "message": "接口错误包 42 个",
+        "minuteFromStart": 1
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 0,
+    "rootCause": null
+  }
+}

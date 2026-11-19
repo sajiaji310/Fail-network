@@ -1,0 +1,100 @@
+{
+  "id": "test-03",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "两处故障同时发生（拓扑相距 > 2 跳）",
+  "note": "对抗例（AC-16）：两端接入同时劣化，必须拆成 2 个事件，不得合并成一个",
+  "scenario": {
+    "name": "test-two-faults",
+    "title": "拓扑两端同时发生光模块劣化",
+    "description": "ACC-SW-25 与 ACC-SW-19 分处拓扑两端（相距 4 跳），同一时间窗内各自光模块劣化。",
+    "rootCauseHint": "ACC-SW-25 与 ACC-SW-19 两处独立的光模块劣化",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -19.4,
+        "threshold": -16,
+        "message": "收光 -19.4dBm",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "PORT_FLAP",
+        "severity": "P2",
+        "metric": "flap_count",
+        "value": 6,
+        "threshold": 5,
+        "message": "端口抖动 6 次",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 5.8,
+        "threshold": 1,
+        "message": "上联丢包率 5.8%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-21",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 2.6,
+        "threshold": 1,
+        "message": "共享上联丢包",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -18.1,
+        "threshold": -16,
+        "message": "收光 -18.1dBm",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "LINK_DOWN",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "count": 3,
+        "message": "上联 3 次 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 7.2,
+        "threshold": 1,
+        "message": "上联丢包率 7.2%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-23",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 180,
+        "threshold": 50,
+        "message": "共享上联时延升高",
+        "minuteFromStart": 3
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 2,
+    "rootCause": { "category": "LINK", "device": "ACC-SW-25" },
+    "alternatives": [{ "category": "LINK", "device": "ACC-SW-19" }]
+  }
+}

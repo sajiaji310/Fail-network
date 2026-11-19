@@ -13,6 +13,7 @@ import {
 } from './constants';
 import {
   bestIncidentAboveThreshold,
+  findContinuation,
   mapAlertRow,
   matchesFault,
   rankIncidents,
@@ -282,6 +283,21 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
           active = active.filter((i) => i.id !== merged.mergedId);
         }
       }
+    }
+
+    // B5：跨窗口延续。同一设备簇在事件最近上报后 30 分钟内再现 → 直接沿用。
+    // 打分的时间项以 firstSeen 为锚，静默超过 5 分钟就归零，只靠分数会把一场持续故障拆成两个事件。
+    const continuation = findContinuation(cluster, active, graph, now);
+    if (continuation) {
+      await attachAlerts(continuation.id, cluster.alerts);
+      await refreshIncidentAggregate(continuation.id);
+      summary.updated.push({
+        id: continuation.id,
+        code: continuation.code,
+        added: cluster.alerts.length,
+      });
+      touchActive(continuation, cluster.alerts);
+      return;
     }
 
     if (best) {

@@ -1,0 +1,129 @@
+{
+  "id": "test-01",
+  "set": "test",
+  "kind": "POSITIVE",
+  "title": "运营商出口链路闪断",
+  "note": "正例：BGP 邻居反复重建 + 出口端口抖动 + 光功率临界，考上游类归因",
+  "scenario": {
+    "name": "test-isp-flap",
+    "title": "运营商出口链路闪断",
+    "description": "运营商侧光路衰耗临界，出口反复闪断，BGP 邻居多次重建。",
+    "rootCauseHint": "运营商出口光路衰耗",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P1",
+        "metric": "203.0.113.1",
+        "count": 5,
+        "message": "BGP 邻居 5 次 Down",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "GigabitEthernet2/0/1",
+        "count": 5,
+        "message": "出口链路 5 次 Down",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "PORT_FLAP",
+        "severity": "P1",
+        "metric": "flap_count",
+        "value": 9,
+        "threshold": 3,
+        "message": "出口端口抖动 9 次",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -18.6,
+        "threshold": -16,
+        "message": "出口收光 -18.6dBm",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-01",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 4.8,
+        "threshold": 1,
+        "message": "上联丢包率 4.8%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 6.1,
+        "threshold": 1,
+        "message": "上联丢包率 6.1%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt_203.0.113.1",
+        "value": 380,
+        "threshold": 100,
+        "message": "到运营商网关时延 380ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 620,
+        "threshold": 50,
+        "message": "外网访问时延 620ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-09",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 580,
+        "threshold": 50,
+        "message": "外网访问时延 580ms",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-13",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 2.4,
+        "threshold": 1,
+        "message": "上联丢包率 2.4%",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-21",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 1.8,
+        "threshold": 1,
+        "message": "上联丢包率 1.8%",
+        "minuteFromStart": 5
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "UPSTREAM", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "BGP_NEIGHBOR_DOWN" }
+  }
+}

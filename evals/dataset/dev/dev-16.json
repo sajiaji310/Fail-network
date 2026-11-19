@@ -1,0 +1,71 @@
+{
+  "id": "dev-16",
+  "set": "dev",
+  "kind": "ADVERSARIAL",
+  "title": "30 分钟内重复上报（AC-13）",
+  "note": "对抗例：同一指纹在 25 分钟后再次上报五次，必须累加 count，不得新建事件或重复计入告警数",
+  "scenario": {
+    "name": "dev-repeat-report",
+    "title": "接入交换机资源告警重复上报",
+    "description": "ACC-SW-05 会话表打满并持续，采集侧每分钟重报一次；堆叠邻居 ACC-SW-06 因共享上行丢包。",
+    "rootCauseHint": "ACC-SW-05 会话表耗尽",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "SESSION_HIGH",
+        "severity": "P2",
+        "metric": "session",
+        "value": 97,
+        "threshold": 85,
+        "message": "会话表使用率 97%",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu",
+        "value": 91,
+        "threshold": 80,
+        "message": "CPU 91%（会话老化不足）",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P3",
+        "metric": "uplink",
+        "value": 4.6,
+        "threshold": 1,
+        "message": "共享上联丢包 4.6%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "SESSION_HIGH",
+        "severity": "P2",
+        "metric": "session",
+        "value": 98,
+        "threshold": 85,
+        "message": "会话表使用率 98%（重报）",
+        "minuteFromStart": 25
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu",
+        "value": 93,
+        "threshold": 80,
+        "message": "CPU 93%（重报）",
+        "minuteFromStart": 26
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "CAPACITY", "device": "ACC-SW-05" },
+    "rootAlert": { "device": "ACC-SW-05", "type": "SESSION_HIGH" }
+  }
+}
