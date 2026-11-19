@@ -5,3 +5,4 @@ package-lock.json
 prisma/migrations
 docs/PROJECT-FRAMEWORK.md
 docs/PROJECT-REVIEW.md
+scripts/fixtures/**
