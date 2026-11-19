@@ -12,3 +12,8 @@ docs/PROJECT-FRAMEWORK.md
 docs/PROJECT-REVIEW.md
 scripts/fixtures/**
 evals/results/**
+# 本地排查时留下的临时抓包/日志（curl 输出、server 日志），不是源码
+*.log
+.*.log
+.*.json
+.*.html

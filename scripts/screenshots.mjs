@@ -68,6 +68,14 @@ try {
   await settle(page, '概览');
   await shot(page, 'overview');
 
+  // 概览比一屏高，「评测基线」卡片会被裁在底边 —— 单独截这张卡，README 用它做分数证据
+  const evalCard = page
+    .getByRole('heading', { name: '评测基线' })
+    .locator('xpath=ancestor::section[1]');
+  await evalCard.scrollIntoViewIfNeeded();
+  await evalCard.screenshot({ path: `${OUT}/eval-baseline.png` });
+  console.log(`  ✓ ${OUT}/eval-baseline.png`);
+
   // 列表截「全部」标签：活跃标签在刚 reset 完只有一条，看不出列表形态
   await page.goto(`${BASE}/incidents?status=all`, { waitUntil: 'domcontentloaded' });
   await settle(page, '事件');

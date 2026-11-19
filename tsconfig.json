@@ -35,12 +35,14 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".next-dev/types/**/*.ts",
-    ".next-gate/types/**/*.ts",
-    ".next-serve/types/**/*.ts",
-    ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-dev2/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next-dev/types/**/*.ts",
+    ".next-dev2/types/**/*.ts",
+    ".next-serve/types/**/*.ts",
+    ".next-gate/types/**/*.ts",
+    ".next-gate2/types/**/*.ts",
+    ".next-gate3/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

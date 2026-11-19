@@ -36,6 +36,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/src ./src
+# 概览页的「评测基线」卡片读这份产物；没有它页面会降级成"尚未跑分"
+COPY --from=builder /app/evals/results ./evals/results
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/package.json ./package.json

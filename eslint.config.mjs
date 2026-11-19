@@ -6,9 +6,9 @@ export default tseslint.config(
   {
     ignores: [
       'node_modules/**',
-      '.next/**',
-      '.next-dev/**',
-      '.next-serve/**',
+      // .next / .next-dev / .next-serve / .next-dev2 …（构建产物，随时可能换名字）
+      '.next*',
+      '.next*/**',
       'next-env.d.ts',
       'evals/dataset/**',
       'evals/results/**',

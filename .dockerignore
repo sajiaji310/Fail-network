@@ -8,7 +8,8 @@ docs
 tests
 test-results
 playwright-report
-evals
+# 保留 evals/results：概览页的「评测基线」卡片直接读这份产物
+evals/dataset
 *.log
 *.tsbuildinfo
 .env

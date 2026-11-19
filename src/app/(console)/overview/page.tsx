@@ -6,6 +6,7 @@ import { RefreshButton } from '@/components/domain/refresh-button';
 import { getAlertStats } from '@/modules/alerts/service';
 import { getIncidentStats, listIncidents } from '@/modules/incidents/service';
 import { getDataSummary, getSystemStatus, SEED_BASELINE } from '@/modules/system/service';
+import { EVAL_TARGETS, getEvalSummary } from '@/modules/system/eval-summary';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,15 +24,17 @@ const UPCOMING = [
 const SEVERITY_TONE: Record<string, Tone> = { P0: 'danger', P1: 'danger', P2: 'warn', P3: 'muted' };
 
 export default async function OverviewPage() {
-  const [s, data, alerts, incidents, openList] = await Promise.all([
+  const [s, data, alerts, incidents, openList, evalTest] = await Promise.all([
     getSystemStatus(),
     getDataSummary(),
     getAlertStats(),
     getIncidentStats(),
     listIncidents({ status: ['OPEN', 'ANALYZING', 'LOCATED', 'MITIGATED'], page: 1, pageSize: 5 }),
+    getEvalSummary('test'),
   ]);
 
   const compression = incidents.open > 0 ? (alerts.active / incidents.open).toFixed(1) : '—';
+  const doneCards = UPCOMING.filter(([, , state]) => state === '已完成').length;
 
   const checks: { label: string; value: string; tone: Tone; text: string }[] = [
     {
@@ -210,22 +213,113 @@ export default async function OverviewPage() {
         )}
       </Card>
 
+      <Card className="mt-4">
+        <CardTitle
+          hint={evalTest ? `留出集 ${evalTest.total} 个场景 · 调参全程只碰 dev 集` : '尚未跑分'}
+        >
+          评测基线
+        </CardTitle>
+
+        {evalTest ? (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                {
+                  label: 'Top1 命中率',
+                  value: `${(evalTest.top1Rate * 100).toFixed(1)}%`,
+                  target: `≥ ${EVAL_TARGETS.top1 * 100}%`,
+                  ok: evalTest.top1Rate >= EVAL_TARGETS.top1,
+                },
+                {
+                  label: 'Top3 命中率',
+                  value: `${(evalTest.top3Rate * 100).toFixed(1)}%`,
+                  target: `≥ ${EVAL_TARGETS.top3 * 100}%`,
+                  ok: evalTest.top3Rate >= EVAL_TARGETS.top3,
+                },
+                {
+                  label: '告警压缩比',
+                  value: `${evalTest.compression.toFixed(1)}:1`,
+                  target: `≥ ${EVAL_TARGETS.compression}:1`,
+                  ok: evalTest.compression >= EVAL_TARGETS.compression,
+                },
+                {
+                  label: '全通过场景',
+                  value: `${evalTest.passed}/${evalTest.total}`,
+                  target: '全部',
+                  ok: evalTest.passed === evalTest.total,
+                },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
+                  <p className="flex items-baseline gap-1.5 text-[12px] text-text-secondary">
+                    {item.label}
+                    <span className={`text-[10px] ${item.ok ? 'text-ok' : 'text-danger'}`}>
+                      {item.ok ? '达标' : '未达标'}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 flex items-baseline gap-1">
+                    <span
+                      className={`tabular font-mono text-[18px] leading-6 ${
+                        item.ok ? '' : 'text-danger'
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                    <span className="font-mono text-[11px] text-text-tertiary">
+                      / {item.target}
+                    </span>
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 space-y-1 text-[12px]">
+              <p className="text-text-secondary">
+                证据相关率 {(evalTest.evidenceRate * 100).toFixed(0)}% · 精确率/召回率{' '}
+                {(evalTest.precision * 100).toFixed(0)}% / {(evalTest.recall * 100).toFixed(0)}% ·
+                误抑制 {evalTest.suppressionErrors} 条 · {evalTest.avgDurationMs} ms/场景
+              </p>
+              {evalTest.failed.length > 0 ? (
+                <p className="text-text-secondary">
+                  <span className="text-danger">未通过</span>：
+                  {evalTest.failed.map((f) => `${f.id}「${f.title}」`).join(' · ')}
+                </p>
+              ) : (
+                <p className="text-ok">全部场景通过</p>
+              )}
+              <p className="text-[11px] text-text-tertiary">
+                数据源 <code className="font-mono">evals/results/test.json</code> · 跑于{' '}
+                {format(new Date(evalTest.startedAt), 'MM-dd HH:mm')} · 推理模式 {evalTest.mode} ·
+                压缩比未达标属已知欠账，README 已照实写明
+              </p>
+            </div>
+          </>
+        ) : (
+          <p className="text-[12px] text-text-tertiary">
+            还没有评测产物。执行 <code className="font-mono">npm run eval -- --set=test</code>{' '}
+            后刷新本页；产物在 <code className="font-mono">evals/results/test.md</code>。
+          </p>
+        )}
+      </Card>
+
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <Card>
           <CardTitle hint="复制到终端逐条执行">人工验收命令</CardTitle>
           <pre className="overflow-x-auto rounded-[6px] bg-surface-muted p-3 font-mono text-[12px] leading-6 text-text-secondary">
-            {`npm run sim -- --scenario=core-switch-board-failure --reset
-npm run corr:run
-curl -s "localhost:3000/api/v1/incidents" | jq .`}
+            {`npm run eval -- --set=test      # 留出集跑分，出 Markdown 表
+npm run eval -- --set=dev       # 开发集对照
+npx playwright test             # 两条主路径 E2E`}
           </pre>
           <p className="mt-3 text-[12px] text-text-tertiary">
-            期望：22 条告警 → 1 个事件；再跑一次 <code className="font-mono">corr:run</code>{' '}
-            不新建（幂等）。
+            期望：Top1 85.7% / Top3 85.7% / 压缩比 6.0:1（
+            <span className="text-danger">未达标</span>
+            ，目标 8:1）/ 全通过 7/8；E2E <span className="text-ok">2 passed</span>。
           </p>
         </Card>
 
         <Card>
-          <CardTitle hint="已完成 5 / 8">任务卡进度</CardTitle>
+          <CardTitle hint={`已完成 ${doneCards} / ${UPCOMING.length} · 仅记录进度，不可点击`}>
+            任务卡进度
+          </CardTitle>
           <ul className="space-y-1.5">
             {UPCOMING.map(([id, title, state]) => (
               <li key={id} className="flex items-center gap-2.5 text-[13px]">
@@ -243,6 +337,9 @@ curl -s "localhost:3000/api/v1/incidents" | jq .`}
               </li>
             ))}
           </ul>
+          <p className="mt-3 text-[11px] text-text-tertiary">
+            验收入口在左侧导航（概览 / 告警流 / 事件 / 拓扑 / 案例库），这张表只是进度记录。
+          </p>
         </Card>
       </div>
     </div>
