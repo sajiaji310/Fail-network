@@ -1,6 +1,7 @@
 node_modules
 .next
-.next-dev
+# 本地沙箱用的备用产物目录（.next-dev / .next-dev2 / .next-gate …）
+.next-*
 .git
 .github
 coverage

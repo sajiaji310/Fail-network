@@ -104,6 +104,10 @@
 - [x] Docker：`Dockerfile`（三段构建 + tini + 非 root + healthcheck）、`docker/entrypoint.sh`（db push → seed → start）、`docker-compose.yml`（`DATABASE_URL` 覆盖成服务名 `db`）
 - [x] `scripts/screenshots.mjs`：注入剧本后真实渲染截图，5 张落 `docs/screenshots/`
 - [x] README 按框架 16.5 九段重写，评测分数与失败场景照实写
+- [x] `/settings` 补齐（11.1 要求的三块内容）——**之前只留了侧栏占位死链，是漏做**：
+  - 模型配置：只读展示 env（provider / 双模型 / key 脱敏 / mock / 日志级别），累计 token 消耗按 `model + source` 分组（规则降级的 `tokensUsed` 是 null，混在一起求和会看不出钱花在哪）
+  - 聚合阈值：直接 import `constants.ts`，页面与代码不可能出现两份事实；只读，不做开关
+  - 剧本注入：复用 `/api/v1/ingest/simulate`，与 `npm run sim` 同一个接口同一份 fixture，没有"演示专用通道"
 - [x] 测试 191 条（新增 27）：metrics 9 / report 7 / match 7 / fallback 3 / 其它改动内联
 
 ## T06 关键实测
@@ -192,6 +196,9 @@
 - **`LLM_MOCK=true` 的 fixture 故意含一条幻觉假设**（引用不存在的 alertId），
   用于验证 L1 真的在拦；想看不带丢弃的输出就跑 fallback 或真实模型
 - **`/alerts` 页面文档 11.1 列了，但不在任何任务卡范围内**；侧边栏早有入口，本卡顺手补齐（只读表格 + 状态筛选）
+- **`/settings` 曾被做成"点不动的占位项"**：侧栏挂着 `T09` 徽标但路由不存在，用户点了没反应。
+  现已按 11.1 补齐（模型配置只读 / 聚合阈值 / 剧本注入），`pendingCard` 那套占位机制一并删掉 ——
+  界面上不该有"看起来能点但点了没用"的东西，要么做出来，要么别放
 - **`notFound()` 的 HTTP 状态码是 200**（页面内容与 `meta[name=next-error]=not-found` 正确）：`(console)` 布局先出流，Next 流式渲染下无法回写 404。API 侧仍是标准 404，验收看页面内容即可
 - **拓扑层内换行**：25 台接入单行铺开宽 4450px，`fitView` 需缩到 0.16 而 `minZoom` 卡 0.2 → 必然裁切。改为每行 8 列、行距 56（层间距 96），宽度降到 1398
 - `resetDemoData` 从 `scripts/demo-reset.ts` 下沉到 `src/modules/ingest/reset.ts`：API 与 CLI 共用，避免 `src` 反向依赖 `scripts`（原文件保留为 re-export）
@@ -272,6 +279,11 @@ curl -s localhost:3000/api/health | jq '{status,db,stage}'
 3. `/incidents?status=all` 列表 31 条两列排列，活跃事件在第一条且计数正常（21 条告警 / 15 台设备）
 4. 结案流程回归：详情页「结案」→ 弹窗填备注 → 提交后出现 MTTR 与报告面板，报告可下载 .md
 5. `npm run eval -- --set=test` 的输出表格与 README 里那张表逐个数字对得上（不好看的也照写是硬要求）
+6. `/settings`（本轮补做）：
+   - 「模型配置」显示 `规则降级`（本机没有 key），API Key 标红「未配置」，累计消耗 0 tokens / 3 次研判并注明"规则降级不消耗 token"
+   - 「聚合阈值」四组数值应与 `src/modules/correlation/constants.ts` 完全一致（成簇阈值 0.55、延续窗口 30 分钟、最大 2 跳…）
+   - 「剧本注入」5 套剧本，勾「注入前清场」→ 点某个「注入」→ 出现绿色结果条 + 「打开事件」链接 → 点进去应看到新事件已研判
+7. 侧栏「设置」点了要能进页面（原来是个挂 `T09` 徽标的死链，点不动）
 
 ## 阻塞
 

@@ -17,8 +17,6 @@ type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** 未实现的路由标注所属任务卡，避免出现 404 死链 */
-  pendingCard?: string;
 };
 
 const NAV: NavItem[] = [
@@ -27,7 +25,7 @@ const NAV: NavItem[] = [
   { href: '/incidents', label: '事件', icon: TriangleAlert },
   { href: '/topology', label: '拓扑', icon: Network },
   { href: '/cases', label: '案例库', icon: BookOpen },
-  { href: '/settings', label: '设置', icon: Settings, pendingCard: 'T09' },
+  { href: '/settings', label: '设置', icon: Settings },
 ];
 
 export function Sidebar() {
@@ -46,24 +44,8 @@ export function Sidebar() {
           控制台
         </p>
         <ul className="space-y-0.5">
-          {NAV.map(({ href, label, icon: Icon, pendingCard }) => {
+          {NAV.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
-            if (pendingCard) {
-              return (
-                <li key={href}>
-                  <span
-                    className="flex items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-text-tertiary"
-                    title={`尚未实现，见任务卡 ${pendingCard}`}
-                  >
-                    <Icon size={16} strokeWidth={1.5} />
-                    <span className="text-[13px]">{label}</span>
-                    <span className="ml-auto rounded-[4px] bg-surface-muted px-1.5 py-px font-mono text-[10px] text-text-tertiary">
-                      {pendingCard}
-                    </span>
-                  </span>
-                </li>
-              );
-            }
             return (
               <li key={href}>
                 <Link
