@@ -38,6 +38,4 @@ Thumbs.db
 
 # local tooling（便携版数据库不入库）
 .tools/
-.next-dev/
-.next-serve/
-.next-gate/
+.next-*/
