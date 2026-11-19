@@ -1,29 +1,28 @@
-import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
-import { signatureOf } from '@/modules/alerts/fingerprint';
+import { recordAlert, type ParentCache } from '@/modules/alerts/service';
 import type { ParseIssue, RawAlert } from './schema';
 
 export type IngestIssue = ParseIssue & { deviceName?: string };
 
 export type IngestResult = {
   source: string;
+  /** 新落库的告警周期数（含 30 分钟到期后重开的周期） */
   accepted: number;
+  /** 外部 ID 命中 或 命中 30 分钟内的同指纹周期（AC-13）→ 只累加 count / lastSeen */
   deduped: number;
+  /** 本次新落库即被父告警抑制的条数（AC-02） */
   suppressed: number;
+  /** 本次落库的父告警回溯压掉的历史告警数（B9） */
+  retroSuppressed: number;
+  /** 因 B9 撤出告警而自动关闭的事件数 */
+  autoClosedIncidents: number;
   failed: number;
   issues: IngestIssue[];
 };
 
-/** 周期起点取整到分钟：同一批数据重复导入才能命中 (fingerprintId, cycleStart) 唯一键 */
-function toCycleStart(date: Date): Date {
-  const d = new Date(date);
-  d.setSeconds(0, 0);
-  return d;
-}
-
 /**
- * 告警落库：外部 ID 幂等 → 指纹 upsert → 周期唯一键兜底。
- * 抑制（父告警压制子告警）在 T04 实现，此处恒为 0。
+ * 告警导入编排：设备解析 → 外部 ID 幂等 → 交给 alerts 模块做归一化与抑制。
+ * 这里不实现任何生命周期/抑制规则，规则全部在 `modules/alerts/*`。
  */
 export async function ingestAlerts(
   source: string,
@@ -34,6 +33,8 @@ export async function ingestAlerts(
     accepted: 0,
     deduped: 0,
     suppressed: 0,
+    retroSuppressed: 0,
+    autoClosedIncidents: 0,
     failed: 0,
     issues: [],
   };
@@ -56,6 +57,9 @@ export async function ingestAlerts(
     ).map((a) => a.externalKey),
   );
 
+  const parentCache: ParentCache = new Map();
+  const now = new Date();
+
   for (const alert of alerts) {
     const deviceId = deviceByName.get(alert.deviceName);
     if (!deviceId) {
@@ -72,53 +76,37 @@ export async function ingestAlerts(
       continue;
     }
 
-    const signature = signatureOf(deviceId, alert.type, alert.metric);
-    const fingerprint = await db.alertFingerprint.upsert({
-      where: { signature },
-      create: {
-        signature,
-        deviceId,
-        type: alert.type,
-        metric: alert.metric,
-        severity: alert.severity,
-      },
-      update: { severity: alert.severity },
-    });
-
-    // 先查后写：同周期重复导入走 deduped，不依赖唯一键异常（避免刷 prisma:error）
-    const cycleStart = toCycleStart(alert.firstSeen);
-    const existingCycle = await db.alert.findFirst({
-      where: { fingerprintId: fingerprint.id, cycleStart },
-      select: { id: true },
-    });
-    if (existingCycle) {
-      result.deduped++;
-      continue;
-    }
-
     try {
-      await db.alert.create({
-        data: {
-          fingerprintId: fingerprint.id,
+      const outcome = await recordAlert(
+        {
+          deviceId,
+          type: alert.type,
           severity: alert.severity,
-          value: alert.value,
-          threshold: alert.threshold,
+          metric: alert.metric ?? null,
+          value: alert.value ?? null,
+          threshold: alert.threshold ?? null,
           message: alert.message,
-          count: alert.count ?? 1,
+          count: alert.count,
           firstSeen: alert.firstSeen,
-          lastSeen: alert.lastSeen ?? alert.firstSeen,
-          cycleStart,
-          externalKey: alert.externalKey,
-          raw: { source, ...(alert.raw ?? {}) },
+          lastSeen: alert.lastSeen,
+          externalKey: alert.externalKey ?? null,
+          source,
+          raw: alert.raw,
+          parentCache,
         },
-      });
-      result.accepted++;
+        now,
+      );
+
+      if (outcome.action === 'ACCUMULATED') {
+        result.deduped++;
+      } else {
+        result.accepted++;
+        if (outcome.suppressed) result.suppressed++;
+      }
+      result.retroSuppressed += outcome.retroSuppressed;
+      result.autoClosedIncidents += outcome.autoClosedIncidents;
       if (alert.externalKey) existing.add(alert.externalKey);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        result.deduped++;
-        continue;
-      }
       result.failed++;
       result.issues.push({
         deviceName: alert.deviceName,

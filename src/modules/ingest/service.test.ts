@@ -9,6 +9,7 @@ const hasDb = Boolean(process.env.DATABASE_URL);
 
 function alert(overrides: Partial<RawAlert> = {}): RawAlert {
   const at = new Date('2026-11-19T02:00:00Z');
+  const firstSeen = overrides.firstSeen ?? at;
   return {
     externalKey: `${EXT_PREFIX}${Math.random().toString(36).slice(2, 10)}`,
     deviceName: DEVICE,
@@ -16,8 +17,9 @@ function alert(overrides: Partial<RawAlert> = {}): RawAlert {
     severity: 'P1',
     metric: 'Gi1/0/1',
     message: '测试链路 Down',
-    firstSeen: at,
-    lastSeen: at,
+    firstSeen,
+    // lastSeen 必须跟随 firstSeen，否则 30 分钟周期判定会被一个"超前 70 分钟"的 lastSeen 带偏
+    lastSeen: overrides.lastSeen ?? firstSeen,
     ...overrides,
   };
 }
@@ -65,7 +67,7 @@ describe.skipIf(!hasDb)('ingestAlerts（依赖真实 DB）', () => {
     expect(result.issues[0]!.message).toContain('设备不存在');
   });
 
-  it('同指纹同周期（同一分钟）只保留一行，第二行进 deduped', async () => {
+  it('同指纹 30 分钟内上报两次 → 只保留一行，第二行进 deduped（AC-13）', async () => {
     const at = new Date('2026-11-19T03:15:30Z');
     const result = await ingestAlerts('test', [
       alert({ externalKey: `${EXT_PREFIX}cycle-a`, metric: 'Gi1/0/3', firstSeen: at }),
@@ -79,7 +81,7 @@ describe.skipIf(!hasDb)('ingestAlerts（依赖真实 DB）', () => {
     expect(result.deduped).toBe(1);
   });
 
-  it('跨周期（超过一分钟边界）产生两条发生记录', async () => {
+  it('跨 30 分钟周期边界产生两条发生记录（AC-14）', async () => {
     const result = await ingestAlerts('test', [
       alert({
         externalKey: `${EXT_PREFIX}next-a`,
@@ -89,7 +91,7 @@ describe.skipIf(!hasDb)('ingestAlerts（依赖真实 DB）', () => {
       alert({
         externalKey: `${EXT_PREFIX}next-b`,
         metric: 'Gi1/0/4',
-        firstSeen: new Date('2026-11-19T04:05:00Z'),
+        firstSeen: new Date('2026-11-19T04:31:00Z'),
       }),
     ]);
     expect(result.accepted).toBe(2);

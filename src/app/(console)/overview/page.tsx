@@ -2,14 +2,15 @@ import { format } from 'date-fns';
 import { Card, CardTitle } from '@/components/ui/card';
 import { StatusPill, type Tone } from '@/components/ui/status-pill';
 import { RefreshButton } from '@/components/domain/refresh-button';
+import { getAlertStats } from '@/modules/alerts/service';
 import { getDataSummary, getSystemStatus, SEED_BASELINE } from '@/modules/system/service';
 
 export const dynamic = 'force-dynamic';
 
 const UPCOMING = [
   ['T02', '数据模型与种子', '已完成'],
-  ['T03', '告警接入 + 模拟器', '未开始'],
-  ['T04', '归一化 + 抑制 + 生命周期', '未开始'],
+  ['T03', '告警接入 + 模拟器', '已完成'],
+  ['T04', '归一化 + 抑制 + 生命周期', '已完成'],
   ['T05', '关联聚合', '未开始'],
   ['T06', '事件详情（只读拓扑）', '未开始'],
   ['T07', '根因研判', '未开始'],
@@ -18,7 +19,11 @@ const UPCOMING = [
 ] as const;
 
 export default async function OverviewPage() {
-  const [s, data] = await Promise.all([getSystemStatus(), getDataSummary()]);
+  const [s, data, alerts] = await Promise.all([
+    getSystemStatus(),
+    getDataSummary(),
+    getAlertStats(),
+  ]);
 
   const checks: { label: string; value: string; tone: Tone; text: string }[] = [
     {
@@ -108,7 +113,48 @@ export default async function OverviewPage() {
           <StatusPill tone={data.seedReady ? 'ok' : 'warn'}>
             {data.seedReady ? '种子数据就位' : '待执行 npm run db:seed'}
           </StatusPill>
-          <span className="text-text-tertiary">告警为 0 属正常：T03 起才有接入数据</span>
+          <span className="text-text-tertiary">
+            {data.alerts === 0
+              ? '告警为 0 属正常：T03 起才有接入数据'
+              : '告警行数按「发生周期」计，同周期重复上报已折叠进 count'}
+          </span>
+        </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardTitle hint="T04 归一化 + 父子抑制 + 生命周期">告警状态</CardTitle>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'ACTIVE 有效', value: alerts.active, tone: 'ok' as Tone },
+            { label: 'SUPPRESSED 被抑制', value: alerts.suppressed, tone: 'warn' as Tone },
+            { label: 'RESOLVED 已恢复', value: alerts.resolved, tone: 'muted' as Tone },
+            { label: '折叠次数', value: alerts.collapsed, tone: 'info' as Tone },
+          ].map((item) => (
+            <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
+              <p className="text-[12px] text-text-secondary">{item.label}</p>
+              <p className="mt-0.5 flex items-baseline gap-1">
+                <span className="tabular font-mono text-[18px] leading-6">{item.value}</span>
+                {alerts.total > 0 ? (
+                  <span className="font-mono text-[11px] text-text-tertiary">/ {alerts.total}</span>
+                ) : null}
+              </p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+          <StatusPill tone={alerts.suppressed > 0 ? 'warn' : 'muted'}>
+            {alerts.suppressed > 0 ? '抑制生效' : '无抑制'}
+          </StatusPill>
+          {alerts.suppressedByType.length > 0 ? (
+            <span className="text-text-secondary">
+              抑制明细：
+              {alerts.suppressedByType.map((s) => `${s.type} ${s.count}`).join(' · ')}
+            </span>
+          ) : (
+            <span className="text-text-tertiary">
+              注入 core-switch-board-failure 后，核心设备上 13 条子告警应被压制，根因告警保持 ACTIVE
+            </span>
+          )}
         </div>
       </Card>
 
@@ -116,18 +162,18 @@ export default async function OverviewPage() {
         <Card>
           <CardTitle hint="复制到终端逐条执行">人工验收命令</CardTitle>
           <pre className="overflow-x-auto rounded-[6px] bg-surface-muted p-3 font-mono text-[12px] leading-6 text-text-secondary">
-            {`curl -s localhost:3000/api/health | jq .
-npm run lint && npm run typecheck
-npm run build`}
+            {`curl -s "localhost:3000/api/v1/alerts?status=SUPPRESSED" | jq .
+npm run alerts:stats
+npm run sim -- --scenario=core-switch-board-failure`}
           </pre>
           <p className="mt-3 text-[12px] text-text-tertiary">
-            期望：health 返回 <code className="font-mono">db: &quot;up&quot;</code> 且 HTTP
-            200；三条命令零报错。
+            期望：SUPPRESSED 列表非空且 <code className="font-mono">suppressedByAlertId</code>{' '}
+            指向父告警；根因 <code className="font-mono">LINECARD_FAILURE</code> 仍在 ACTIVE。
           </p>
         </Card>
 
         <Card>
-          <CardTitle hint="MVP-0 剩余 8 张卡">任务卡进度</CardTitle>
+          <CardTitle hint="已完成 3 / 8">任务卡进度</CardTitle>
           <ul className="space-y-1.5">
             {UPCOMING.map(([id, title, state]) => (
               <li key={id} className="flex items-center gap-2.5 text-[13px]">

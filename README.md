@@ -50,9 +50,15 @@ npm run dev               # http://localhost:3000 → /overview
 # 注入一套故障剧本（5 套可选）
 npm run sim -- --list
 npm run sim -- --scenario=core-switch-board-failure
+
+# 归一化 / 抑制状态（T04 起）
+npm run alerts:stats            # ACTIVE / SUPPRESSED / RESOLVED 分布
+npm run alerts:recompute        # 对存量告警重跑父告警回溯抑制（幂等）
 ```
 
 健康检查：`curl -s localhost:3000/api/health | jq .`
+
+告警列表：`curl -s "localhost:3000/api/v1/alerts?status=SUPPRESSED" | jq .`
 
 ## 工程门禁
 

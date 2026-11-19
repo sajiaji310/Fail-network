@@ -111,14 +111,19 @@ model Alert {
   externalKey   String? // 外部系统告警 ID，导入幂等
   raw           Json?
   incidentId    String?
+  /// 抑制溯源：被哪条父告警压制。父告警恢复时按此精确回滚（4.3 状态图 SUPPRESSED→ACTIVE）
+  suppressedByAlertId String?
 
-  fingerprint AlertFingerprint @relation(fields: [fingerprintId], references: [id], onDelete: Cascade)
-  incident    Incident?        @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  fingerprint  AlertFingerprint @relation(fields: [fingerprintId], references: [id], onDelete: Cascade)
+  incident     Incident?        @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  suppressedBy Alert?           @relation("suppression", fields: [suppressedByAlertId], references: [id], onDelete: SetNull)
+  suppressing  Alert[]          @relation("suppression")
 
   @@unique([fingerprintId, cycleStart])
   @@unique([externalKey])
   @@index([status, lastSeen])
   @@index([incidentId])
+  @@index([suppressedByAlertId])
 }
 
 model ChangeRecord {
