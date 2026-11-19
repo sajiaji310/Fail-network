@@ -112,7 +112,7 @@ curl -s "localhost:3000/api/v1/incidents?status=OPEN" | jq .
 # 4) 接口触发聚合（幂等，created/updated 全为空）
 curl -s -X POST localhost:3000/api/v1/correlation/run
 
-# 5) 规则单测：80 passed
+# 5) 规则单测：81 passed
 npm run test
 ```
 
