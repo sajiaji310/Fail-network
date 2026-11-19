@@ -1,0 +1,23 @@
+{
+  "name": "routing-policy-change",
+  "title": "核心 ACL 变更导致业务访问超时",
+  "description": "CORE-SW-01 上一条 ACL 规则顺序被改错，DENY 先于 PERMIT 命中服务器网段，链路全部正常但业务大面积超时——典型的'无链路告警的网络故障'。",
+  "rootCauseHint": "CORE-SW-01 ACL 规则顺序错误误拦截业务流量",
+  "changes": [
+    { "deviceName": "CORE-SW-01", "kind": "CONFIG", "content": "调整 ACL 3100 规则，新增 deny ip source 10.0.3.0 0.0.0.255 规则并置于 permit 之前", "operator": "zhangwei", "minuteFromStart": 0 }
+  ],
+  "alerts": [
+    { "deviceName": "CORE-SW-01", "type": "ACL_DENY_HIT", "severity": "P1", "metric": "acl_3100", "value": 4200, "threshold": 100, "message": "ACL 3100 命中 deny 规则 4200 次/分钟", "minuteFromStart": 1 },
+    { "deviceName": "ACC-SW-05", "type": "HIGH_LATENCY", "severity": "P1", "metric": "rtt", "value": 5000, "threshold": 50, "message": "业务系统访问超时（5s 无响应）", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-08", "type": "HIGH_LATENCY", "severity": "P1", "metric": "rtt", "value": 5000, "threshold": 50, "message": "业务系统访问超时（5s 无响应）", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-12", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 3200, "threshold": 50, "message": "接口调用偶发超时", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-16", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 2800, "threshold": 50, "message": "接口调用偶发超时", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-20", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 4100, "threshold": 50, "message": "业务系统访问超时", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-24", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 3600, "threshold": 50, "message": "业务系统访问超时", "minuteFromStart": 4 },
+    { "deviceName": "CORE-SW-01", "type": "CPU_HIGH", "severity": "P2", "metric": "cpu", "value": 83, "threshold": 80, "message": "CPU 83%（ACL 逐包匹配）", "minuteFromStart": 5 },
+    { "deviceName": "AGG-SW-02", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 3.4, "threshold": 1, "message": "上联丢包率 3.4%（会话重试）", "minuteFromStart": 5 },
+    { "deviceName": "ACC-SW-09", "type": "HIGH_LATENCY", "severity": "P3", "metric": "rtt", "value": 900, "threshold": 50, "message": "部分终端访问慢", "minuteFromStart": 6 },
+    { "deviceName": "ACC-SW-13", "type": "HIGH_LATENCY", "severity": "P3", "metric": "rtt", "value": 1100, "threshold": 50, "message": "部分终端访问慢", "minuteFromStart": 6 },
+    { "deviceName": "ACC-SW-17", "type": "PACKET_LOSS", "severity": "P3", "metric": "uplink", "value": 1.6, "threshold": 1, "message": "上联丢包率 1.6%", "minuteFromStart": 7 }
+  ]
+}

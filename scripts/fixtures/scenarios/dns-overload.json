@@ -1,0 +1,23 @@
+{
+  "name": "dns-overload",
+  "title": "上游 DNS 过载导致解析超时",
+  "description": "上游递归 DNS 响应时间飙升，内网链路完全正常，但全网终端域名解析超时，表现为'能 ping 通 IP 打不开网页'。",
+  "rootCauseHint": "上游 DNS 递归服务器过载，解析超时",
+  "changes": [],
+  "alerts": [
+    { "deviceName": "CORE-SW-01", "type": "DNS_TIMEOUT", "severity": "P1", "metric": "dns_rtt", "value": 5200, "threshold": 200, "message": "DNS 解析耗时 5.2s，超时率 38%", "minuteFromStart": 0 },
+    { "deviceName": "CORE-SW-01", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt_8.8.8.8", "value": 420, "threshold": 100, "message": "到上游 8.8.8.8 时延 420ms", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-01", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 260, "threshold": 50, "message": "汇聚上联时延升高", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-02", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 280, "threshold": 50, "message": "汇聚上联时延升高", "minuteFromStart": 2 },
+    { "deviceName": "AGG-SW-03", "type": "HIGH_LATENCY", "severity": "P3", "metric": "rtt", "value": 210, "threshold": 50, "message": "汇聚上联时延升高", "minuteFromStart": 2 },
+    { "deviceName": "AGG-SW-04", "type": "HIGH_LATENCY", "severity": "P3", "metric": "rtt", "value": 230, "threshold": 50, "message": "汇聚上联时延升高", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-02", "type": "DNS_TIMEOUT", "severity": "P2", "metric": "dns_rtt", "value": 4800, "threshold": 200, "message": "终端域名解析超时", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-06", "type": "DNS_TIMEOUT", "severity": "P2", "metric": "dns_rtt", "value": 5100, "threshold": 200, "message": "终端域名解析超时", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-11", "type": "DNS_TIMEOUT", "severity": "P2", "metric": "dns_rtt", "value": 4600, "threshold": 200, "message": "终端域名解析超时", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-15", "type": "DNS_TIMEOUT", "severity": "P2", "metric": "dns_rtt", "value": 5000, "threshold": 200, "message": "终端域名解析超时", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-19", "type": "DNS_TIMEOUT", "severity": "P3", "metric": "dns_rtt", "value": 3800, "threshold": 200, "message": "终端域名解析慢", "minuteFromStart": 5 },
+    { "deviceName": "ACC-SW-23", "type": "DNS_TIMEOUT", "severity": "P3", "metric": "dns_rtt", "value": 3900, "threshold": 200, "message": "终端域名解析慢", "minuteFromStart": 5 },
+    { "deviceName": "CORE-SW-01", "type": "CPU_HIGH", "severity": "P3", "metric": "cpu", "value": 68, "threshold": 80, "message": "CPU 68%（DNS 转发放大）", "minuteFromStart": 6 },
+    { "deviceName": "ACC-SW-04", "type": "PACKET_LOSS", "severity": "P3", "metric": "uplink", "value": 1.2, "threshold": 1, "message": "上联丢包率 1.2%", "minuteFromStart": 6 }
+  ]
+}

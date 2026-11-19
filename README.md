@@ -46,6 +46,10 @@ npm run db:start
 
 npm run db:push && npm run db:seed
 npm run dev               # http://localhost:3000 → /overview
+
+# 注入一套故障剧本（5 套可选）
+npm run sim -- --list
+npm run sim -- --scenario=core-switch-board-failure
 ```
 
 健康检查：`curl -s localhost:3000/api/health | jq .`

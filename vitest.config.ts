@@ -1,5 +1,12 @@
-import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
+
+// 测试进程继承 .env（Prisma 需要 DATABASE_URL）
+try {
+  process.loadEnvFile('.env');
+} catch {
+  // CI 用环境变量注入
+}
 
 export default defineConfig({
   resolve: {
@@ -10,7 +17,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'tests/unit/**/*.test.ts'],
-    exclude: ['node_modules', '.next'],
+    exclude: ['node_modules', '.next', '.next-dev'],
     reporters: 'default',
+    // DB 集成用例串行跑，避免并发抢唯一键
+    fileParallelism: false,
   },
 });

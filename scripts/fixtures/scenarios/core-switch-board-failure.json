@@ -1,0 +1,31 @@
+{
+  "name": "core-switch-board-failure",
+  "title": "核心交换机线卡 3 故障",
+  "description": "CORE-SW-01 线卡 3 转发芯片故障，导致 AGG-SW-03/04 上联中断，下挂接入交换机大面积业务受损；CPU 因转发表重建短时冲高。",
+  "rootCauseHint": "CORE-SW-01 线卡 3 硬件故障",
+  "changes": [],
+  "alerts": [
+    { "deviceName": "CORE-SW-01", "type": "LINECARD_FAILURE", "severity": "P0", "metric": "Slot3", "message": "线卡 3 硬件故障，所有端口 Down", "minuteFromStart": 0 },
+    { "deviceName": "CORE-SW-01", "type": "CPU_HIGH", "severity": "P1", "metric": "cpu", "value": 96, "threshold": 80, "message": "CPU 利用率 96%，持续 5 分钟", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-03", "type": "LINK_DOWN", "severity": "P1", "metric": "Ten-GigabitEthernet1/0/49", "message": "上联 CORE-SW-01 端口 Down", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-03", "type": "LINK_DOWN", "severity": "P1", "metric": "Ten-GigabitEthernet1/0/50", "message": "备上联 CORE-SW-01 端口 Down", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-04", "type": "LINK_DOWN", "severity": "P1", "metric": "Ten-GigabitEthernet1/0/49", "message": "上联 CORE-SW-01 端口 Down", "minuteFromStart": 1 },
+    { "deviceName": "AGG-SW-04", "type": "BGP_NEIGHBOR_DOWN", "severity": "P1", "metric": "10.0.0.1", "message": "BGP 邻居 10.0.0.1 状态 Idle", "minuteFromStart": 2 },
+    { "deviceName": "AGG-SW-03", "type": "BGP_NEIGHBOR_DOWN", "severity": "P1", "metric": "10.0.0.1", "message": "BGP 邻居 10.0.0.1 状态 Idle", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-02", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 12.4, "threshold": 1, "message": "上联丢包率 12.4%", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-03", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 18.7, "threshold": 1, "message": "上联丢包率 18.7%", "minuteFromStart": 2 },
+    { "deviceName": "ACC-SW-06", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 9.3, "threshold": 1, "message": "上联丢包率 9.3%", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-07", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 320, "threshold": 50, "message": "到网关时延 320ms", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-10", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 15.1, "threshold": 1, "message": "上联丢包率 15.1%", "minuteFromStart": 3 },
+    { "deviceName": "ACC-SW-11", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 410, "threshold": 50, "message": "到网关时延 410ms", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-14", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 21.2, "threshold": 1, "message": "上联丢包率 21.2%", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-15", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 380, "threshold": 50, "message": "到网关时延 380ms", "minuteFromStart": 4 },
+    { "deviceName": "ACC-SW-18", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 7.8, "threshold": 1, "message": "上联丢包率 7.8%", "minuteFromStart": 5 },
+    { "deviceName": "ACC-SW-19", "type": "HIGH_LATENCY", "severity": "P2", "metric": "rtt", "value": 260, "threshold": 50, "message": "到网关时延 260ms", "minuteFromStart": 5 },
+    { "deviceName": "ACC-SW-22", "type": "PACKET_LOSS", "severity": "P2", "metric": "uplink", "value": 11.6, "threshold": 1, "message": "上联丢包率 11.6%", "minuteFromStart": 5 },
+    { "deviceName": "ACC-SW-23", "type": "HIGH_LATENCY", "severity": "P3", "metric": "rtt", "value": 150, "threshold": 50, "message": "到网关时延 150ms", "minuteFromStart": 6 },
+    { "deviceName": "AGG-SW-03", "type": "CPU_HIGH", "severity": "P2", "metric": "cpu", "value": 88, "threshold": 80, "message": "CPU 利用率 88%（路由重收敛）", "minuteFromStart": 6 },
+    { "deviceName": "AGG-SW-04", "type": "CPU_HIGH", "severity": "P2", "metric": "cpu", "value": 84, "threshold": 80, "message": "CPU 利用率 84%（路由重收敛）", "minuteFromStart": 6 },
+    { "deviceName": "CORE-SW-01", "type": "DEVICE_UNREACHABLE", "severity": "P0", "metric": "snmp", "message": "SNMP 采集超时，主控无响应 30s", "minuteFromStart": 7 }
+  ]
+}
