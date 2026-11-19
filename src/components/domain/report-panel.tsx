@@ -80,8 +80,13 @@ export function ReportPanel({
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `${code}-report.md`;
+    // 必须挂到文档里再点，否则部分浏览器/驱动不会把它当成用户发起的下载；
+    // 撤销要等浏览器把 blob 读走之后再执行，同步撤销会把下载掐断。
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   return (
