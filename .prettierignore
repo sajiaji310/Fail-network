@@ -1,8 +1,14 @@
 node_modules
 .next
+.next-*
 coverage
+test-results
+playwright-report
 package-lock.json
+# next build 会往里追加 distDir 类型路径，格式与 Prettier 互相打架
+tsconfig.json
 prisma/migrations
 docs/PROJECT-FRAMEWORK.md
 docs/PROJECT-REVIEW.md
 scripts/fixtures/**
+evals/results/**

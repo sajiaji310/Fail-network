@@ -8,9 +8,13 @@ export default tseslint.config(
       'node_modules/**',
       '.next/**',
       '.next-dev/**',
+      '.next-serve/**',
       'next-env.d.ts',
       'evals/dataset/**',
+      'evals/results/**',
       'coverage/**',
+      'test-results/**',
+      'playwright-report/**',
       'scripts/fixtures/**',
     ],
   },
@@ -44,7 +48,13 @@ export default tseslint.config(
     // 构建期 Node 脚本（.mjs）
     files: ['scripts/**/*.mjs', '*.mjs'],
     languageOptions: {
-      globals: { process: 'readonly', console: 'readonly' },
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Buffer: 'readonly',
+      },
     },
     rules: { 'no-console': 'off' },
   },

@@ -1,3 +1,5 @@
+name: netscope
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -9,17 +11,30 @@ services:
     ports: ['5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U netscope']
+      test: ['CMD-SHELL', 'pg_isready -U netscope -d netscope']
       interval: 5s
-      retries: 10
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
 
   app:
     build: .
     container_name: netscope-app
     ports: ['3000:3000']
-    env_file: .env
+    # 注意：.env 里的 DATABASE_URL 指向 localhost（本地开发用），
+    # 容器内 localhost 是 app 自己，必须在这里覆盖成服务名 db。
+    # environment 的优先级高于 env_file，所以这条会生效。
+    environment:
+      DATABASE_URL: postgresql://netscope:netscope@db:5432/netscope?schema=public
+      APP_BASE_URL: http://localhost:3000
+      # 没有 LLM key 时保持 true：研判走规则引擎，功能完整可演示
+      LLM_MOCK: ${LLM_MOCK:-true}
+      SEED_ON_START: 'true'
+      LOG_LEVEL: info
+    env_file: [.env]
     depends_on:
       db: { condition: service_healthy }
+    restart: unless-stopped
 
 volumes:
   pgdata:

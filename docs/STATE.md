@@ -1,11 +1,11 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-19 23:45
+> 最后更新：2026-11-20 00:40
 
 ## 当前任务
 
-**T08 人工确认 + 简版报告 — 已实现，等待人工验收**
+**T09 评测与发布 — 已实现，等待人工验收（最后一张卡）**
 
 ## 已完成
 
@@ -73,7 +73,7 @@
 - [x] `incidents/hypothesis-view.ts`（JSON 列容错收敛）、`incidents/devices.ts`（影响面聚合从 detail 抽出，压回 300 行内）
 - [x] 测试 136 条（新增 36）：verify 14 / fallback 7 / context-trim 7 / analyze 集成 8
 
-### T08 人工确认 + 简版报告（待人工验收）
+### T08 人工确认 + 简版报告（已验收）
 
 - [x] `incidents/status.ts`：事件状态中文标签 + 动作动词 + 后果说明（徽标与状态机共用一份，避免文案漂移）
 - [x] `incidents/stateMachine.ts`：只向前、允许跳级、`RESOLVED → CLOSED` 唯一出口；`assertTransition` 抛 `INVALID_TRANSITION` 409（带 `allowed` / `reason`）
@@ -86,6 +86,25 @@
 - [x] UI：`incident-actions`（合法目标全列出 + 结案二次确认弹窗 + 结案记录 + 流转记录）、`hypothesis-card` 加采纳/否决、`report-panel`（原文展示 + 复制 + 下载 .md + 重新生成）、`/cases` 页面（搜索 + 标签筛选 + 卡片 + 空态）
 - [x] 侧边栏 `/cases` 去掉 T08 占位标记
 - [x] 测试 164 条（新增 28）：状态机 7 / 报告模板 10 / lifecycle 集成 11
+
+### T09 评测与发布（待人工验收）
+
+- [x] `evals/schema.ts`：评测数据契约 `EvalCaseSchema`，复用演示剧本的 `ScenarioSchema`，场景与剧本同构
+- [x] `evals/dataset/{dev,test}/`：24 个场景（dev 16 / test 8），三类分布 dev 6/5/5、test 2/2/4（正例/干扰例/对抗例）
+- [x] `evals/metrics.ts`：纯函数打分器 —— Top1/Top3、证据相关率、告警压缩比、事件精确率/召回率、误抑制率、耗时
+- [x] `evals/report.ts`：Markdown 渲染（指标表 / 分层命中 / 逐场景 / 失败明细），落 `evals/results/{dev,test}.{md,json}`
+- [x] `evals/run.ts`：执行器 `清场 → 摘链路 → 注入 → 聚合 → 逐事件研判 → 打分 → 恢复链路 → 清场`，`LLM_MOCK` 先于 `lib/env` 写入
+- [x] `evals/metrics.test.ts` / `evals/report.test.ts`：16 个用例锁住尺子本身（打分与渲染不能悄悄漂移）
+- [x] `src/modules/ingest/scenario.ts`：抽出 `runScenarioSpec(spec)`，让评测直接用内存剧本，`runScenario` 变薄包装
+- [x] 评测驱动的三处业务修正（都是真实的召回缺陷，不是为了让分数好看）：
+  - `MIN_CANDIDATE_SCORE` 40 → 20 + 新增 `SELF` 权重 15：原阈值要求"至少一条强信号"（直连变更/邻接），纯链路/质量类故障最高只有 38 分，会给出空结论
+  - `findContinuation` + `CONTINUATION_WINDOW_MS`（30 分钟）：B5 延续判定，解决跨窗口同类告警被拆成两个事件
+  - `scoreClusterAgainstIncident` 锚点从 `firstSeen` 改为 `lastSeen` 并加 30 分钟闸门，同时修掉"100 分钟内两次独立故障被并成一个"
+- [x] `playwright.config.ts` + `tests/e2e/`：两条 E2E（`channel:'chrome'` 复用本机 Chrome，不下载 Chromium）
+- [x] Docker：`Dockerfile`（三段构建 + tini + 非 root + healthcheck）、`docker/entrypoint.sh`（db push → seed → start）、`docker-compose.yml`（`DATABASE_URL` 覆盖成服务名 `db`）
+- [x] `scripts/screenshots.mjs`：注入剧本后真实渲染截图，5 张落 `docs/screenshots/`
+- [x] README 按框架 16.5 九段重写，评测分数与失败场景照实写
+- [x] 测试 191 条（新增 27）：metrics 9 / report 7 / match 7 / fallback 3 / 其它改动内联
 
 ## T06 关键实测
 
@@ -122,6 +141,21 @@
 | 案例检索 | `?q=线卡` → 2 条（刚结案 + 种子案例）；`/cases/search?incidentId=...` → 3 条相似案例；`?q=不存在XYZ` → 0 条                   |
 | 页面     | `/incidents/INC-20261119-001` 200，含"处理动作 / 已采纳 / 复盘报告 / MTTR：13 分钟"；`/cases`、`/cases?q=线卡` 均 200         |
 | 构建     | 新增 4 条路由（cases / cases/search / incidents/[id] PATCH+hypothesis verdict / report），详情页首屏 JS 192 kB                |
+
+## T09 关键实测
+
+| 项           | 结果                                                                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| test 集跑分  | Top1 85.7%（6/7）、Top3 85.7%（6/7）、证据率 100%、压缩比 **6.0:1 ❌**（仅正例 7.5:1）、精确/召回 100%/100%、误抑制 0%、平均 23 ms、全通过 7/8     |
+| dev 集跑分   | Top1 85.7%（12/14）、Top3 92.9%（13/14）、压缩比 8.4:1（仅正例 10.0:1）、全通过 15/16                                                              |
+| 唯一失败场景 | test-08「拓扑全缺失」：核心到四台汇聚链路全部缺失，核心成孤岛，事件覆盖不到标注设备 —— 真实的能力上限，已写进 README                               |
+| 评测耗时     | test 0.9 s / dev 1.4 s（24 个场景全部在本机跑完，含清场与恢复）                                                                                    |
+| E2E          | `2 passed (26.0s)`；`--repeat-each=2` 连跑 4 次全过（`4 passed`）                                                                                  |
+| 下载断言     | 原实现在 `anchor.click()` 后同步 `revokeObjectURL` 且未挂 DOM → 下载被掐断；改为挂载 + `setTimeout` 延迟撤销后通过                                 |
+| 生产启动     | `NEXT_DIST_DIR=.next-serve PORT=3100 npm run start` → `/api/health` 200，`stage:"T09 评测与发布"`，路由表 21 条（详情页首屏 192 kB / 拓扑 175 kB） |
+| 截图         | 5 张 1440×900 @2x（overview / incidents / incident-detail / topology / cases），生产构建实拍，无开发浮层                                           |
+| 单测         | `191 passed (24 files)`                                                                                                                            |
+| 构建体积     | 首屏共享 JS 102 kB；最重页面 `/incidents/[id]` 22.7 kB 页面代码                                                                                    |
 
 ## 未完成 / 已知偏差
 
@@ -162,8 +196,24 @@
 - **拓扑层内换行**：25 台接入单行铺开宽 4450px，`fitView` 需缩到 0.16 而 `minZoom` 卡 0.2 → 必然裁切。改为每行 8 列、行距 56（层间距 96），宽度降到 1398
 - `resetDemoData` 从 `scripts/demo-reset.ts` 下沉到 `src/modules/ingest/reset.ts`：API 与 CLI 共用，避免 `src` 反向依赖 `scripts`（原文件保留为 re-export）
 - 文档 8 节 `Device.alerts` 笔误、`IncidentAlert` 未建表、`embedding` 降级 `String?`、`Incident` 缺 `lastSeen`（均见 T02/T05 记录，需回写文档）
-- 本机沙箱单轮删除 >50 文件会拦截：重启 dev/build 前先用 PowerShell 清 `.next(-dev)`
+- 本机沙箱单轮删除 >50 文件会拦截（`next build` 清旧产物正好触发）。构建用
+  `NEXT_DIST_DIR=.next-serve npm run build` 落到新目录即可绕开；默认路径（dev 用 `.next-dev`、
+  生产用 `.next`）不受影响，Docker 内不涉及
 - 本机无管理员权限 → 数据库不能注册 Windows 服务，重启后 `npm run db:start`
+- **评测集分布与框架 10.5 不一致**：框架设想正例/干扰例/对抗例各 8，实际 dev 6/5/5、test 2/2/4。
+  对抗例偏多是刻意的（MVP 阶段错判代价高于漏判），但正例只有 2 个的 test 集统计意义有限，
+  分母小于 10 时一个场景就能挪动 14 个百分点
+- **评测全部跑在 `LLM_MOCK=false` + 无 key 的降级路径上**：所有分数反映的是规则引擎下限，
+  真实 LLM 推理质量没有纳入评测。要做「LLM vs 规则」对比，得先有稳定的 key 预算与
+  可重复的采样策略
+- **告警压缩比未达标（6.0:1 / 目标 8:1）**：对抗例告警量本就小（3–8 条）拉低整体比值，
+  仅正例 7.5:1 仍差一点。根子是跨时间窗的重复告警没有二次收敛 —— B4/B6 之外的"长期悬挂告警"
+  还没有归属规则，属 T05 已知欠账
+- **Docker 未做实际构建验证**：本机没有 docker，Dockerfile / compose 只做了逐行校对
+  （`DATABASE_URL` 覆盖、entrypoint 序列、非 root、healthcheck）。本地等价路径已验到
+  `npm run build` + `npm run start` 起来且 `/api/health` 200
+- **历史归档事件在列表里显示「告警 0 · 设备 0」**：30 条种子历史事件没有关联 `Alert` 行
+  （种子只造了案例文案，没造配套告警）。活跃事件计数正常，属数据侧欠账，不是聚合算错
 
 ## 已知行为（不是 bug，验收时别误会）
 
@@ -175,54 +225,53 @@
 
 ## 下一步
 
-1. 人工验收 T08（清单见下）
-2. 通过后 → T09：评测与发布（`npm run eval -- --set=test`、Playwright E2E 两条链路、README 跑分表）
+1. 人工验收 T09（清单见下）——这是最后一张卡
+2. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes；P1 按评测结论排优先级（先补压缩比欠账，再谈拓扑编辑）
 
-## T08 人工验收清单
+## T09 人工验收清单
 
 ```bash
 cd E:/sinxiangmy/netscope
 
-# 1) 清场并造一个事件（核心线卡故障 → 1 个 P0 事件 / 15 台设备 / 21 条告警）
-npm run sim -- --scenario=core-switch-board-failure --reset
-CODE=$(curl -s "localhost:3000/api/v1/incidents?status=OPEN" | jq -r '.items[0].code')
+# 1) 留出集跑分（调参只碰过 dev，test 是没见过的场景）
+npm run eval -- --set=test
+cat evals/results/test.md
+#   期望：Top1 85.7% / Top3 85.7% / 证据率 100% / 压缩比 6.0:1 ❌ / 全通过 7/8
+#   失败项应为 test-08「拓扑全缺失」，README 已如实写明
 
-# 2) 研判（无 key 走 fallback），取首选假设 id
-npm run rca:analyze -- --code=$CODE --force
-HID=$(curl -s "localhost:3000/api/v1/incidents/$CODE" | jq -r '.hypotheses[0].id')
+# 2) 开发集对照（16 个场景，压缩比应达标 8.4:1）
+npm run eval -- --set=dev
+cat evals/results/dev.md
 
-# 3) 采纳 → 推进 → 结案（期望 mttrSeconds 有值、reportId 与 caseId 均非 null）
-curl -s -X PATCH "localhost:3000/api/v1/incidents/$CODE/hypotheses/$HID" \
-  -H 'content-type: application/json' -d '{"verdict":"ACCEPTED","note":"现场确认"}' | jq '.acceptedHypothesisId'
-curl -s -X PATCH "localhost:3000/api/v1/incidents/$CODE" \
-  -H 'content-type: application/json' -d '{"status":"ANALYZING"}' | jq '{from,to,changed}'
-curl -s -X PATCH "localhost:3000/api/v1/incidents/$CODE" \
-  -H 'content-type: application/json' -d '{"status":"RESOLVED","note":"更换线卡后恢复"}' | jq '{mttrSeconds,reportId,caseId,warnings}'
+# 3) 两条 E2E（复用本机 Chrome，不下载 Chromium；会自动起 dev server）
+npx playwright test
+#   期望：2 passed
 
-# 4) 报告四段（MTTR / 影响面 / 根因 / 改进项）
-curl -s "localhost:3000/api/v1/incidents/$CODE/report" | sed -n '1,20p'
+# 4) 生产启动冒烟（等价于容器里的 npm run start）
+NEXT_DIST_DIR=.next-serve npm run build
+NEXT_DIST_DIR=.next-serve PORT=3100 npm run start
+curl -s localhost:3100/api/health | jq '{status,stage,llm}'
+#   期望：status=ok, stage="T09 评测与发布"
 
-# 5) AC-08：期望 409 INVALID_TRANSITION，且 allowed 只有 CLOSED
-curl -s -X PATCH "localhost:3000/api/v1/incidents/$CODE" \
-  -H 'content-type: application/json' -d '{"status":"OPEN"}' -w "\nhttp=%{http_code}\n"
+# 5) 截图重生成（注入剧本 → 研判 → 真实渲染截图）
+APP_BASE_URL=http://127.0.0.1:3100 node scripts/screenshots.mjs
+ls docs/screenshots          # overview / incidents / incident-detail / topology / cases
 
-# 6) 案例检索：刚结案的案例必须能按关键词搜到
-curl -s "localhost:3000/api/v1/cases?q=线卡" | jq '{total, codes:[.items[].incidentCode]}'
-curl -s "localhost:3000/api/v1/cases/search?incidentId=$CODE&limit=3" | jq '[.items[].title]'
-
-# 7) 门禁（164 passed）
+# 6) 门禁（191 passed）
 npm run lint && npm run typecheck && npm run test && npm run build
+
+# 7) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）
+docker compose up --build -d
+curl -s localhost:3000/api/health | jq '{status,db,stage}'
 ```
 
 浏览器验收（重点）：
 
-1. `/incidents` → 点事件进详情 → 右栏顶部「处理动作」：当前状态徽标 + 全部合法目标（OPEN 时有 4 个：研判中 / 已定位 / 已缓解 / 结案）
-2. 点「结案」→ 弹窗（不可回退提示 + 备注输入 + 动词按钮「结案」）；提交后页头出现 MTTR，右栏出现结案记录与「流转记录」
-3. 假设卡片底部「采纳为首要根因 / 否决」：采纳后卡片变绿边并标「已采纳」；采纳第二条时第一条自动取消（单选）
-4. 已采纳时点「重新研判」→ 按钮变「确认重新研判」并提示"会清空已采纳裁决"（再点才执行）
-5. 页面底部「复盘报告」：展开显示 Markdown 原文，可复制 / 下载 .md / 重新生成；页脚显示快照 ID 与生成时间
-6. `/cases`：刚结案的案例排第一，可搜「线卡」、可点标签「线卡故障」、点「查看事件」跳回详情
-7. 结案后浏览器再调 `PATCH status=OPEN` → 409（页面不会出现"待处理"按钮，状态只增不减）
+1. `/overview` 顶部阶段显示「T09 评测与发布」，下方阶段清单 T01–T09 全为「已完成」
+2. README 里 5 张截图能正常打开，且与当前页面一致（概览 / 事件列表 / 事件详情 / 拓扑 / 案例库）
+3. `/incidents?status=all` 列表 31 条两列排列，活跃事件在第一条且计数正常（21 条告警 / 15 台设备）
+4. 结案流程回归：详情页「结案」→ 弹窗填备注 → 提交后出现 MTTR 与报告面板，报告可下载 .md
+5. `npm run eval -- --set=test` 的输出表格与 README 里那张表逐个数字对得上（不好看的也照写是硬要求）
 
 ## 阻塞
 

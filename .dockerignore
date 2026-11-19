@@ -1,12 +1,16 @@
 node_modules
 .next
+.next-dev
 .git
 .github
 coverage
 docs
 tests
+test-results
+playwright-report
 evals
 *.log
+*.tsbuildinfo
 .env
 .env.*
 !.env.example

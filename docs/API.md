@@ -132,3 +132,18 @@
 - **无 `LLM_API_KEY`**（AC-07）：全链路照常可用，`source=RULE_FALLBACK` 且 `degradedReason` 说明原因。
 - **`LLM_MOCK=true`**：用 fixture 假输出跑通链路；fixture 里刻意含一条引用不存在 ID 的假设，
   用于验证 L1 丢弃（响应中会出现在 `verify.dropped`）。
+
+## 评测（非 HTTP）
+
+评测刻意**不暴露 HTTP 端点**：它要清场、注入、聚合、逐事件研判再恢复链路，是有副作用的批处理，
+放进 API 迟早会被误调用。入口只有脚本：
+
+```bash
+npm run eval -- --set=test    # 8 个留出场景
+npm run eval -- --set=dev     # 16 个开发场景
+npm run eval -- --set=all
+```
+
+产物：`evals/results/{dev,test}.md`（人看的表格）与同名 `.json`（机器可读，含逐场景打分）。
+评测走的代码路径与线上完全一致（`ingest → correlation → rca.analyze`），唯一的差别是
+`LLM_MOCK` 与环境变量在加载 `lib/env` 之前写入，因此同一份数据在两种模式下可比。
