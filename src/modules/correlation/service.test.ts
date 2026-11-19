@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
 import { signatureOf } from '../alerts/fingerprint';
 import { buildDeviceGraph } from './topology';
@@ -87,6 +87,8 @@ async function resetTestData() {
 }
 
 beforeEach(resetTestData);
+// 收尾也要清：性能用例会灌 500 条告警，留着会污染演示数据与概览页
+afterAll(resetTestData);
 
 describe('AC-03 / AC-04 / AC-17 成簇与幂等', () => {
   it('3 条同设备告警 → 1 个事件；重跑不新建、id 完全一致', async () => {
@@ -291,6 +293,49 @@ describe('B3 事件级合并', () => {
     expect(dropped?.closedReason).toBe('AUTO_MERGED');
     expect(dropped?.mergedIntoId).toBe(keeper!.id);
     expect(await incidentOf([...aAlerts, ...bAlerts])).toEqual([keeper!.id]);
+  });
+});
+
+describe('回归：聚合时刻之后的告警不能当锚点', () => {
+  it('库中存在更晚的事件时，当前批告警必须新建事件而不是并进去', async () => {
+    const futureAt = min(60);
+    const futureIds = await makeClusterAlerts(
+      'ACC-SW-08',
+      futureAt,
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'future',
+    );
+
+    const futureIncident = await db.incident.create({
+      data: {
+        code: 'INC-20261110-900',
+        title: '未来事件（模拟时钟偏差/后续补报）',
+        status: 'OPEN',
+        severity: 'P2',
+        startedAt: futureAt,
+        lastSeen: futureAt,
+        clusterKey: 'future-key',
+      },
+    });
+    await db.alert.updateMany({
+      where: { id: { in: futureIds } },
+      data: { incidentId: futureIncident.id },
+    });
+
+    const nowIds = await makeClusterAlerts(
+      'ACC-SW-08',
+      BASE,
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'now',
+    );
+
+    const result = await runCorrelation(min(10));
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0]!.id).not.toBe(futureIncident.id);
+
+    const untouched = await db.incident.findUnique({ where: { id: futureIncident.id } });
+    expect(untouched?.startedAt.toISOString()).toBe(futureAt.toISOString());
+    expect(await incidentOf(nowIds)).toEqual([result.created[0]!.id]);
   });
 });
 

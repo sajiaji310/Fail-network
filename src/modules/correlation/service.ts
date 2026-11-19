@@ -145,7 +145,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
     db.incident.findMany({
       where: {
         status: { in: [...CLOSED_INCIDENT_STATUSES] },
-        resolvedAt: { gte: recurrenceHorizon },
+        resolvedAt: { gte: recurrenceHorizon, lte: now },
       },
       orderBy: [{ resolvedAt: 'desc' }],
       select: INCIDENT_SELECT,

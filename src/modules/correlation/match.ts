@@ -86,11 +86,15 @@ export function scoreClusterAgainstIncident(
   for (const d of clusterDevices) if (incidentDevices.has(d)) deviceOverlap++;
 
   const horizon = now.getTime() - FOLLOWUP_LOOKBACK_MS;
+  const ceiling = now.getTime();
   let best = 0;
 
   for (const a of cluster.alerts) {
     for (const b of incident.alerts) {
-      if (b.firstSeen.getTime() < horizon) continue;
+      // 锚点必须落在 [now-2h, now]：只设下界会把"晚于聚合时刻"的告警也当成锚点，
+      // 历史基准的集成测试会因此把当天的事件并进来
+      const at = b.firstSeen.getTime();
+      if (at < horizon || at > ceiling) continue;
       if (!canRelate(graph, a, b)) continue;
       const score = scorePair(graph, a, b);
       if (score > best) best = score;
