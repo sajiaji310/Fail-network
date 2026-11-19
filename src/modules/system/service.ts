@@ -15,7 +15,7 @@ export type SystemStatus = {
   dbError?: string;
 };
 
-const STAGE = 'T01 工程基座';
+const STAGE = 'T07 根因研判';
 
 async function probeDb(): Promise<{ status: DbStatus; version?: string; error?: string }> {
   try {

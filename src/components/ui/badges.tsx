@@ -1,4 +1,5 @@
 import type { AlertStatus, IncidentStatus, Severity } from '@prisma/client';
+import { INCIDENT_STATUS_LABEL } from '@/modules/incidents/status';
 import { StatusPill, type Tone } from './status-pill';
 
 /** 严重度/状态徽标：色 + 文字双编码（文档 11.3），调用方不要自己拼颜色 */
@@ -51,15 +52,6 @@ const INCIDENT_STATUS_TONE: Record<IncidentStatus, Tone> = {
   MITIGATED: 'warn',
   RESOLVED: 'ok',
   CLOSED: 'muted',
-};
-
-const INCIDENT_STATUS_LABEL: Record<IncidentStatus, string> = {
-  OPEN: '待处理',
-  ANALYZING: '研判中',
-  LOCATED: '已定位',
-  MITIGATED: '已缓解',
-  RESOLVED: '已恢复',
-  CLOSED: '已归档',
 };
 
 export function IncidentStatusPill({ status }: { status: IncidentStatus }) {

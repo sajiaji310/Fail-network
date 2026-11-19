@@ -1,6 +1,19 @@
-import type { AlertStatus, DeviceType, IncidentStatus, Severity } from '@prisma/client';
+import type { AlertStatus, IncidentStatus, Severity } from '@prisma/client';
 import { db } from '@/lib/db';
+import { parseAnalysisMeta, type AnalysisMeta } from '@/modules/rca/schema';
+import {
+  parseClosure,
+  parseStatusLog,
+  type ClosureRecord,
+  type StatusLogEntry,
+} from './closure-view';
+import { aggregateIncidentDevices, type IncidentDevice } from './devices';
+import { toHypothesisView, type HypothesisView } from './hypothesis-view';
 import { buildTimeline, type TimelineItem } from './timeline';
+
+export type { ClosureRecord, StatusLogEntry } from './closure-view';
+export type { HypothesisView } from './hypothesis-view';
+export type { IncidentDevice } from './devices';
 
 /**
  * 事件详情取数（文档 11 节第 13 条：含 alerts / hypotheses / timeline）。
@@ -25,19 +38,6 @@ export type IncidentAlertRow = {
   suppressedByAlertId: string | null;
 };
 
-export type IncidentDevice = {
-  id: string;
-  name: string;
-  type: DeviceType;
-  layer: number;
-  site: string | null;
-  ip: string | null;
-  alertCount: number;
-  suppressedCount: number;
-  maxSeverity: Severity;
-  types: string[];
-};
-
 export type IncidentChange = {
   id: string;
   deviceId: string;
@@ -46,17 +46,6 @@ export type IncidentChange = {
   content: string;
   operator: string | null;
   changedAt: string;
-};
-
-export type HypothesisView = {
-  id: string;
-  rank: number;
-  cause: string;
-  category: string;
-  confidence: number;
-  source: string;
-  evidenceCount: number;
-  verifyStepCount: number;
 };
 
 export type IncidentDetail = {
@@ -79,6 +68,12 @@ export type IncidentDetail = {
   devices: IncidentDevice[];
   changes: IncidentChange[];
   hypotheses: HypothesisView[];
+  /** 上一次研判的审计信息（T07）：没有研判过则为 null */
+  analysis: AnalysisMeta | null;
+  /** 人工流转审计（T08）：按发生顺序 */
+  statusLog: StatusLogEntry[];
+  /** 结案记录（T08）：未结案为 null */
+  closure: ClosureRecord | null;
   timeline: TimelineItem[];
   timelineTotal: number;
   timelineTruncated: boolean;
@@ -95,12 +90,6 @@ export type IncidentDetail = {
 export const CHANGE_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 /** 事件结束后仍可能补录变更，留 5 分钟尾巴 */
 export const CHANGE_LOOKAHEAD_MS = 5 * 60 * 1000;
-
-const SEVERITY_RANK: Record<Severity, number> = { P0: 4, P1: 3, P2: 2, P3: 1 };
-
-function jsonLength(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
-}
 
 export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetail | null> {
   const incident = await db.incident.findFirst({
@@ -121,6 +110,9 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
       closedReason: true,
       reopenedCount: true,
       mergedIntoId: true,
+      analysisMeta: true,
+      statusLog: true,
+      closure: true,
       alerts: {
         orderBy: [{ firstSeen: 'asc' }, { id: 'asc' }],
         select: {
@@ -152,8 +144,13 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
           category: true,
           confidence: true,
           source: true,
+          model: true,
           evidence: true,
           verifySteps: true,
+          actions: true,
+          verdict: true,
+          verdictAt: true,
+          verdictNote: true,
         },
       },
     },
@@ -177,38 +174,13 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
     suppressedByAlertId: a.suppressedByAlertId,
   }));
 
-  const deviceMap = new Map<string, IncidentDevice>();
-  for (const alert of incident.alerts) {
-    const device = alert.fingerprint.device;
-    let entry = deviceMap.get(device.id);
-    if (!entry) {
-      entry = {
-        id: device.id,
-        name: device.name,
-        type: device.type,
-        layer: device.layer,
-        site: device.site,
-        ip: device.ip,
-        alertCount: 0,
-        suppressedCount: 0,
-        maxSeverity: alert.severity,
-        types: [],
-      };
-      deviceMap.set(device.id, entry);
-    }
-    entry.alertCount += 1;
-    if (alert.status === 'SUPPRESSED') entry.suppressedCount += 1;
-    if (SEVERITY_RANK[alert.severity] > SEVERITY_RANK[entry.maxSeverity]) {
-      entry.maxSeverity = alert.severity;
-    }
-    if (!entry.types.includes(alert.fingerprint.type)) entry.types.push(alert.fingerprint.type);
-  }
-
-  const devices = [...deviceMap.values()].sort(
-    (a, b) =>
-      a.layer - b.layer ||
-      SEVERITY_RANK[b.maxSeverity] - SEVERITY_RANK[a.maxSeverity] ||
-      a.name.localeCompare(b.name),
+  const devices = aggregateIncidentDevices(
+    incident.alerts.map((a) => ({
+      severity: a.severity,
+      status: a.status,
+      type: a.fingerprint.type,
+      device: a.fingerprint.device,
+    })),
   );
 
   const changes = devices.length
@@ -235,6 +207,17 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
       })
     : [];
 
+  // 时间线与返回值共用同一份变更投影，避免两处字段口径漂移
+  const timelineChanges = changes.map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    content: c.content,
+    operator: c.operator,
+    changedAt: c.changedAt,
+    deviceId: c.device.id,
+    deviceName: c.device.name,
+  }));
+
   const timeline = buildTimeline({
     incident: {
       id: incident.id,
@@ -257,15 +240,7 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
       deviceName: a.fingerprint.device.name,
       suppressedBy: a.suppressedByAlertId,
     })),
-    changes: changes.map((c) => ({
-      id: c.id,
-      kind: c.kind,
-      content: c.content,
-      operator: c.operator,
-      changedAt: c.changedAt,
-      deviceId: c.device.id,
-      deviceName: c.device.name,
-    })),
+    changes: timelineChanges,
   });
 
   const durationSeconds =
@@ -289,25 +264,11 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
     mergedIntoId: incident.mergedIntoId,
     alerts,
     devices,
-    changes: changes.map((c) => ({
-      id: c.id,
-      deviceId: c.device.id,
-      deviceName: c.device.name,
-      kind: c.kind,
-      content: c.content,
-      operator: c.operator,
-      changedAt: c.changedAt.toISOString(),
-    })),
-    hypotheses: incident.hypotheses.map((h) => ({
-      id: h.id,
-      rank: h.rank,
-      cause: h.cause,
-      category: h.category,
-      confidence: h.confidence,
-      source: h.source,
-      evidenceCount: jsonLength(h.evidence),
-      verifyStepCount: jsonLength(h.verifySteps),
-    })),
+    changes: timelineChanges.map((c) => ({ ...c, changedAt: c.changedAt.toISOString() })),
+    hypotheses: incident.hypotheses.map(toHypothesisView),
+    analysis: parseAnalysisMeta(incident.analysisMeta),
+    statusLog: parseStatusLog(incident.statusLog),
+    closure: parseClosure(incident.closure),
     timeline: timeline.items,
     timelineTotal: timeline.total,
     timelineTruncated: timeline.truncated,

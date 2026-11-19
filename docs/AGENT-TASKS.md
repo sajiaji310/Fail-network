@@ -12,9 +12,9 @@
 | T03 | 告警接入 + 模拟器        | T02  | 已验收     |
 | T04 | 归一化 + 抑制 + 生命周期 | T03  | 已验收     |
 | T05 | 关联聚合                 | T04  | 已验收     |
-| T06 | 事件详情（只读拓扑）     | T05  | 待人工验收 |
-| T07 | 根因研判                 | T06  | 未开始     |
-| T08 | 人工确认 + 简版报告      | T07  | 未开始     |
+| T06 | 事件详情（只读拓扑）     | T05  | 已验收     |
+| T07 | 根因研判                 | T06  | 已验收     |
+| T08 | 人工确认 + 简版报告      | T07  | 待人工验收 |
 | T09 | 评测与发布               | T08  | 未开始     |
 
 ---
@@ -70,12 +70,26 @@
 - 目标：规则 fallback 先通 → LLM 结构化 → L1/L2/L3 校验；无 key 全链路可用
 - 改动范围：`src/modules/rca/**`、`src/lib/llm/**`、`src/app/api/v1/incidents/[id]/analyze/**`
 - 验收：AC-06 / AC-07 / AC-18 / AC-20；校验器三条丢弃原因各有单测；降级 source=RULE_FALLBACK
+- 实际改动：
+  - `lib/llm/client.ts`（三态 + 30s 超时）、`rca/{schema,context,context-trim,context-types,prompt,fallback,verify,analyze,persist,mock}.ts`
+  - `app/api/v1/incidents/[id]/analyze/route.ts`、`scripts/analyze.ts`（`npm run rca:analyze`）
+  - UI：`components/domain/hypothesis-{panel,card}.tsx`、`incidents/{hypothesis-view,devices}.ts`
+  - 数据：`Incident.analysisMeta Json?`（文档 8 节缺项，承载 missingInfo + VerifyResult）
+  - 测试 36 条：verify 14 / fallback 7 / context-trim 7 / analyze 集成 8
 
 ### T08 人工确认 + 简版报告
 
 - 目标：采纳/否决落库；状态机非法流转 409；报告四段（MTTR/影响面/根因/改进项）
 - 改动范围：`src/modules/incidents/stateMachine.ts`、`src/modules/report/**`、`src/modules/case/**`、`src/app/(console)/cases/**`
 - 验收：AC-08 / AC-09；`/cases` 关键词可检索到刚结案的案例
+- 实际改动：
+  - `incidents/{status,stateMachine,lifecycle,closure-view}.ts`：状态机 + 结案副作用 + 审计读模型
+  - `report/{template,service}.ts`：四段模板（纯函数）+ 快照落库
+  - `case/service.ts`：案例草稿 / upsert / 多词 AND 检索 / 标签统计 / 相似召回
+  - API：`PATCH incidents/[id]`、`PATCH incidents/[id]/hypotheses/[hid]`、`POST|GET incidents/[id]/report`、`GET cases`、`GET cases/search`
+  - UI：`incident-actions`（结案二次确认）、`hypothesis-card` 裁决、`report-panel`（原文/复制/下载）、`/cases` 页面
+  - 数据：`Incident.statusLog / closure`、`Hypothesis.verdict / verdictAt / verdictNote`（文档 8 节缺项）
+  - 测试 28 条：状态机 7 / 报告模板 10 / lifecycle 集成 11
 
 ### T09 评测与发布
 

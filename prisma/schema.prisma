@@ -157,6 +157,13 @@ model Incident {
   reopenedFromId String? // B6 重开自哪个事件
   reopenedCount  Int            @default(0)
   closedReason   String? // MANUAL | AUTO_MERGED | AUTO_NOISE | AUTO_CLOSED
+  /// 研判审计：{ analyzedAt, source, model, missingInfo, verify:{dropped,stats} }
+  /// 文档 10.3 要求"校验结果要落库，用于 eval 与事后审计"，但 8 节模型缺此字段，T07 补
+  analysisMeta   Json?
+  /// 人工流转审计：[{ from, to, at, note }]，只追加不覆盖（F7「结案记录」）
+  statusLog      Json?
+  /// 结案记录：{ at, note, acceptedHypothesisId, acceptedCause }，仅 RESOLVED 时写
+  closure        Json?
   createdAt      DateTime       @default(now())
 
   alerts     Alert[]
@@ -181,6 +188,10 @@ model Hypothesis {
   source     String // LLM | RULE_FALLBACK
   model      String?
   tokensUsed Int?
+  /// 人工裁决（T08）：ACCEPTED / REJECTED，null = 未裁决。重新研判会整体替换假设，裁决随之清空
+  verdict     String?
+  verdictAt   DateTime?
+  verdictNote String?
   createdAt  DateTime @default(now())
   incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 

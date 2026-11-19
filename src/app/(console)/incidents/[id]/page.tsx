@@ -5,6 +5,7 @@ import { IncidentWorkspace } from '@/components/domain/incident-workspace';
 import { IncidentStatusPill, SeverityPill } from '@/components/ui/badges';
 import { absTime, duration, relTime } from '@/lib/utils/time';
 import { getIncidentDetail } from '@/modules/incidents/detail';
+import { getLatestReport } from '@/modules/report/service';
 import { getTopologyGraph } from '@/modules/topology/service';
 
 export const dynamic = 'force-dynamic';
@@ -12,10 +13,13 @@ export const dynamic = 'force-dynamic';
 /** 事件详情：三栏工作台由 IncidentWorkspace 承载，本页只做取数与页头 */
 export default async function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const detail = await getIncidentDetail(id);
+  const [detail, topology, report] = await Promise.all([
+    getIncidentDetail(id),
+    getTopologyGraph(),
+    getLatestReport(id),
+  ]);
   if (!detail) notFound();
 
-  const topology = await getTopologyGraph();
   const mttr = detail.mttrSeconds ?? detail.stats.durationSeconds;
 
   return (
@@ -95,7 +99,7 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
         </dl>
       </header>
 
-      <IncidentWorkspace detail={detail} topology={topology} />
+      <IncidentWorkspace detail={detail} topology={topology} report={report} />
     </div>
   );
 }
