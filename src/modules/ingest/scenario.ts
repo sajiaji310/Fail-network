@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+import { runCorrelation, type CorrelationSummary } from '@/modules/correlation/service';
 import { SeveritySchema, type RawAlert } from './schema';
 import { ingestAlerts, type IngestResult } from './service';
 
@@ -166,14 +167,26 @@ export type SimulateResult = {
   alertTotal: number;
   changes: number;
   ingest: IngestResult;
+  /** 本次注入触达的事件（新建/沿用/重开） */
+  incidentIds: string[];
+  correlation: CorrelationSummary;
 };
 
-/** 剧本注入：落告警 + 变更记录。事件聚合在 T05 接入，此处不产出 incidentId */
+/** 剧本注入：落告警 + 变更记录，然后立即聚合出事件（T05） */
 export async function runScenario(name: string, seed?: number): Promise<SimulateResult> {
   const spec = loadScenario(name);
   const materialized = materialize(spec, { seed });
   const ingest = await ingestAlerts(`sim:${name}`, materialized.alerts);
   const changes = await writeChanges(materialized.changes);
+
+  const correlation = await runCorrelation();
+  const incidentIds = [
+    ...new Set([
+      ...correlation.created.map((i) => i.id),
+      ...correlation.updated.map((i) => i.id),
+      ...correlation.reopened.map((i) => i.id),
+    ]),
+  ];
 
   return {
     scenario: spec.name,
@@ -182,5 +195,7 @@ export async function runScenario(name: string, seed?: number): Promise<Simulate
     alertTotal: materialized.alerts.length,
     changes,
     ingest,
+    incidentIds,
+    correlation,
   };
 }

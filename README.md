@@ -47,18 +47,25 @@ npm run db:start
 npm run db:push && npm run db:seed
 npm run dev               # http://localhost:3000 → /overview
 
-# 注入一套故障剧本（5 套可选）
+# 注入一套故障剧本（5 套可选；--reset 先清掉上次注入的数据）
 npm run sim -- --list
-npm run sim -- --scenario=core-switch-board-failure
+npm run sim -- --scenario=core-switch-board-failure --reset
 
 # 归一化 / 抑制状态（T04 起）
 npm run alerts:stats            # ACTIVE / SUPPRESSED / RESOLVED 分布
 npm run alerts:recompute        # 对存量告警重跑父告警回溯抑制（幂等）
+
+# 关联聚合（T05 起）：把告警聚成事件，幂等可重复执行
+npm run corr:run
 ```
 
 健康检查：`curl -s localhost:3000/api/health | jq .`
 
 告警列表：`curl -s "localhost:3000/api/v1/alerts?status=SUPPRESSED" | jq .`
+
+事件列表：`curl -s "localhost:3000/api/v1/incidents?status=OPEN" | jq .`
+
+手动触发聚合：`curl -s -X POST localhost:3000/api/v1/correlation/run | jq .`
 
 ## 工程门禁
 

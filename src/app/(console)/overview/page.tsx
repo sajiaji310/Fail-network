@@ -3,6 +3,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { StatusPill, type Tone } from '@/components/ui/status-pill';
 import { RefreshButton } from '@/components/domain/refresh-button';
 import { getAlertStats } from '@/modules/alerts/service';
+import { getIncidentStats, listIncidents } from '@/modules/incidents/service';
 import { getDataSummary, getSystemStatus, SEED_BASELINE } from '@/modules/system/service';
 
 export const dynamic = 'force-dynamic';
@@ -11,19 +12,25 @@ const UPCOMING = [
   ['T02', '数据模型与种子', '已完成'],
   ['T03', '告警接入 + 模拟器', '已完成'],
   ['T04', '归一化 + 抑制 + 生命周期', '已完成'],
-  ['T05', '关联聚合', '未开始'],
+  ['T05', '关联聚合', '已完成'],
   ['T06', '事件详情（只读拓扑）', '未开始'],
   ['T07', '根因研判', '未开始'],
   ['T08', '人工确认 + 简版报告', '未开始'],
   ['T09', '评测与发布', '未开始'],
 ] as const;
 
+const SEVERITY_TONE: Record<string, Tone> = { P0: 'danger', P1: 'danger', P2: 'warn', P3: 'muted' };
+
 export default async function OverviewPage() {
-  const [s, data, alerts] = await Promise.all([
+  const [s, data, alerts, incidents, openList] = await Promise.all([
     getSystemStatus(),
     getDataSummary(),
     getAlertStats(),
+    getIncidentStats(),
+    listIncidents({ status: ['OPEN', 'ANALYZING', 'LOCATED', 'MITIGATED'], page: 1, pageSize: 5 }),
   ]);
+
+  const compression = incidents.open > 0 ? (alerts.active / incidents.open).toFixed(1) : '—';
 
   const checks: { label: string; value: string; tone: Tone; text: string }[] = [
     {
@@ -158,22 +165,61 @@ export default async function OverviewPage() {
         </div>
       </Card>
 
+      <Card className="mt-4">
+        <CardTitle hint="T05 关联聚合 · B1–B9">事件</CardTitle>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: '活跃事件', value: incidents.open },
+            { label: '24h 新增', value: incidents.last24h },
+            { label: '累计事件', value: incidents.total },
+            { label: '告警/事件', value: compression },
+          ].map((item) => (
+            <div key={item.label} className="rounded-[8px] bg-surface-muted px-3 py-2">
+              <p className="text-[12px] text-text-secondary">{item.label}</p>
+              <p className="mt-0.5 flex items-baseline gap-1">
+                <span className="tabular font-mono text-[18px] leading-6">{item.value}</span>
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {openList.items.length > 0 ? (
+          <ul className="mt-3 divide-y divide-border rounded-[8px] border border-border">
+            {openList.items.map((i) => (
+              <li key={i.id} className="flex items-center gap-2.5 px-3 py-2 text-[13px]">
+                <span className="font-mono text-[11px] text-text-tertiary">{i.code}</span>
+                <StatusPill tone={SEVERITY_TONE[i.severity] ?? 'muted'}>{i.severity}</StatusPill>
+                <span className="truncate text-text-secondary">{i.title}</span>
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-text-tertiary">
+                  {i.alertCount} 条 / {i.deviceCount} 台 · {format(i.lastSeen, 'HH:mm')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-[12px] text-text-tertiary">
+            暂无活跃事件。注入剧本（或 <code className="font-mono">npm run corr:run</code>
+            ）后，5 分钟内 ≥ 3 条关联告警会聚成一个事件。
+          </p>
+        )}
+      </Card>
+
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <Card>
           <CardTitle hint="复制到终端逐条执行">人工验收命令</CardTitle>
           <pre className="overflow-x-auto rounded-[6px] bg-surface-muted p-3 font-mono text-[12px] leading-6 text-text-secondary">
-            {`curl -s "localhost:3000/api/v1/alerts?status=SUPPRESSED" | jq .
-npm run alerts:stats
-npm run sim -- --scenario=core-switch-board-failure`}
+            {`npm run sim -- --scenario=core-switch-board-failure --reset
+npm run corr:run
+curl -s "localhost:3000/api/v1/incidents" | jq .`}
           </pre>
           <p className="mt-3 text-[12px] text-text-tertiary">
-            期望：SUPPRESSED 列表非空且 <code className="font-mono">suppressedByAlertId</code>{' '}
-            指向父告警；根因 <code className="font-mono">LINECARD_FAILURE</code> 仍在 ACTIVE。
+            期望：22 条告警 → 1 个事件；再跑一次 <code className="font-mono">corr:run</code>{' '}
+            不新建（幂等）。
           </p>
         </Card>
 
         <Card>
-          <CardTitle hint="已完成 3 / 8">任务卡进度</CardTitle>
+          <CardTitle hint="已完成 4 / 8">任务卡进度</CardTitle>
           <ul className="space-y-1.5">
             {UPCOMING.map(([id, title, state]) => (
               <li key={id} className="flex items-center gap-2.5 text-[13px]">

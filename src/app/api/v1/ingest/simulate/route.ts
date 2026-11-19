@@ -59,8 +59,14 @@ export async function POST(req: Request) {
         deduped: result.ingest.deduped,
         suppressed: result.ingest.suppressed,
         failed: result.ingest.failed,
-        // T05 接入聚合后回填真实事件 ID
-        incidentId: null,
+        incidentIds: result.incidentIds,
+        incidentId: result.incidentIds[0] ?? null,
+        correlation: {
+          created: result.correlation.created.length,
+          updated: result.correlation.updated.length,
+          reopened: result.correlation.reopened.length,
+          durationMs: result.correlation.durationMs,
+        },
         traceId,
       },
       { headers: { 'x-trace-id': traceId } },

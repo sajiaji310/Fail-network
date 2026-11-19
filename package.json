@@ -28,7 +28,9 @@
     "sim": "tsx scripts/simulate.ts",
     "postinstall": "prisma generate",
     "alerts:recompute": "tsx scripts/alerts-tool.ts --recompute",
-    "alerts:stats": "tsx scripts/alerts-tool.ts --stats"
+    "alerts:stats": "tsx scripts/alerts-tool.ts --stats",
+    "corr:run": "tsx scripts/correlate.ts",
+    "corr:test": "vitest run src/modules/correlation"
   },
   "dependencies": {
     "@prisma/client": "^6.14.0",

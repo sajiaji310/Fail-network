@@ -147,6 +147,8 @@ model Incident {
   summary        String? // AI 一句话结论
   impactScope    String? // 影响面描述
   startedAt      DateTime
+  /// B5 跨窗口：新告警沿用时延长该字段（文档 8 节模型漏项，4.2 B5 强制要求）
+  lastSeen       DateTime       @default(now())
   locatedAt      DateTime?
   resolvedAt     DateTime?
   mttrSeconds    Int?
