@@ -203,6 +203,29 @@ npm run accept:phase4 -- --clean      # 清掉刚才写入的验收数据
 脚本验不了的三件事单列在结尾，不混进 PASS：真实环境 ≥1 万条回填、降级模式下接受率是否可信、
 误抑制是「压错对象」还是「压太久」——当前口径只覆盖前者。
 
+### 回填压测（1.2 万条，独立临时库）
+
+```bash
+npm run loadtest:ingest -- --base=http://127.0.0.1:3200 --total=12000   # 灌 + 计时
+npm run loadtest:ingest -- --clean                                      # 按 externalKey 前缀清场
+```
+
+按接口的真实约束分 3 批（JSON 单请求上限 5000 条 / 请求体 2 MB），本机单实例实测：
+
+| 指标               | 实测                                       |
+| ------------------ | ------------------------------------------ |
+| 回填量             | 12 000 条 / 3 批（每批 4000 行 ≈ 1059 KB） |
+| 墙钟 / 吞吐        | 36.2s · 331 行/秒（单批 11.2–12.2s）       |
+| 202 受理           | p50 60ms · p90 123ms（异步，不阻塞请求）   |
+| 入库 / 去重 / 失败 | 9008 / 2399 / 593                          |
+| 去重率             | 20.0%（= 构造的重报率）                    |
+| 设备不存在         | 4.9%（= 故意写错的 593 条，差 0）          |
+
+三个读这张表时容易误会的点：**抑制 6851 条（76%）是数据构成造成的**（9 类告警里含父告警
+`DEVICE_UNREACHABLE`，每台设备都有）；**回填不产生事件**（聚合只吃近 30 分钟仍活跃的告警，
+24 小时历史里周期已过期，9000 条入库后只出 48 条候选 / 2 个簇）；**瓶颈是逐行往返**，
+调 `INGEST_CHUNK_SIZE` 不会更快。详见 `docs/STATE.md` 的已知偏差。
+
 ## 技术栈
 
 Next.js 15 App Router（RSC）· TypeScript strict（`noUncheckedIndexedAccess`）· Prisma 6 + PostgreSQL 16 · Tailwind v4 · @xyflow/react · OpenAI 兼容协议（DeepSeek / 通义 / OpenAI）· Vitest · Playwright

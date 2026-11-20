@@ -19,6 +19,7 @@
     "test:watch": "vitest",
     "eval": "tsx evals/run.ts",
     "accept:phase4": "tsx scripts/accept-phase4.ts",
+    "loadtest:ingest": "tsx scripts/loadtest-backfill.ts",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx scripts/seed.ts",

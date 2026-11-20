@@ -186,11 +186,11 @@ async function checkService(): Promise<void> {
     return { ok: res.status === 200 && hit, detail: `HTTP ${res.status} 含「MTTR」=${hit}` };
   });
 
-  await check('交付进度 /settings（T01–T15）', async () => {
+  await check('交付进度 /settings（T01–T16）', async () => {
     const res = await req('/settings');
-    // 卡片标题的 hint 渲染为「15/15 已完成」，少一条就说明卡片表与 STATE 脱节
-    const hit = res.text.includes('15/15');
-    return { ok: res.status === 200 && hit, detail: `HTTP ${res.status} 含「15/15」=${hit}` };
+    // 卡片标题的 hint 渲染为「16/16 已完成」，少一条就说明卡片表与 STATE 脱节
+    const hit = res.text.includes('16/16');
+    return { ok: res.status === 200 && hit, detail: `HTTP ${res.status} 含「16/16」=${hit}` };
   });
 
   await check('批次列表 /api/v1/ingest/batches', async () => {
