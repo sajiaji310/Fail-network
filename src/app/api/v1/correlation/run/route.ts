@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
+import { readTextLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { runCorrelation } from '@/modules/correlation/service';
 
 export const dynamic = 'force-dynamic';
@@ -22,8 +24,17 @@ const BodySchema = z
 export async function POST(req: Request) {
   const traceId = crypto.randomUUID();
   try {
-    const raw = await req.text();
-    const parsed = BodySchema.safeParse(raw.trim() ? JSON.parse(raw) : {});
+    const raw = (await readTextLimited(req)).trim();
+    let body: unknown = {};
+    if (raw.length > 0) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        throw new AppError('VALIDATION_FAILED', '请求体不是合法 JSON');
+      }
+    }
+
+    const parsed = BodySchema.safeParse(body);
     if (!parsed.success) {
       throw new AppError(
         'VALIDATION_FAILED',
@@ -32,7 +43,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const summary = await runCorrelation(parsed.data.now);
+    const summary = await audited(
+      req,
+      {
+        action: 'correlation.run',
+        target: parsed.data.now?.toISOString() ?? 'now',
+        detailOf: (r) => ({
+          created: r.created.length,
+          updated: r.updated.length,
+          reopened: r.reopened.length,
+          merged: r.merged.length,
+          durationMs: r.durationMs,
+        }),
+        requestId: traceId,
+      },
+      () => runCorrelation(parsed.data.now),
+    );
     log.info('correlation_done', {
       traceId,
       created: summary.created.length,

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { env, llmMode, type LlmMode } from '@/lib/env';
+import { getAuditSummary, listAudit, type AuditSummary } from '@/modules/audit/service';
 import {
   CLUSTER_THRESHOLD,
   CLUSTER_WINDOW_MS,
@@ -227,5 +228,103 @@ export function getScenarios(): ScenarioItem[] {
   } catch {
     // 剧本目录没打进镜像 / 文件损坏：降级成空列表，页面显示"没有可用剧本"
     return [];
+  }
+}
+
+/** 审计动作的中文名。新增动作要同步这里，否则页面会显示原始 key */
+const ACTION_LABEL: Record<string, string> = {
+  'analyze.run': '执行研判',
+  'hypothesis.verdict': '假设裁决',
+  'incident.transition': '事件流转',
+  'alert.ingest': '告警导入',
+  'scenario.inject': '剧本注入',
+  'correlation.run': '手动聚合',
+  'report.generate': '生成报告',
+  'case.verify': '案例确认',
+};
+
+export function auditActionLabel(action: string): string {
+  return ACTION_LABEL[action] ?? action;
+}
+
+/** detail 里值得摊在列表上的字段，按这个顺序取，最多 4 个 */
+const DETAIL_KEYS = [
+  'from',
+  'to',
+  'verdict',
+  'verification',
+  'scenario',
+  'reset',
+  'force',
+  'rows',
+  'accepted',
+  'created',
+  'updated',
+  'merged',
+  'reopened',
+  'code',
+  'charCount',
+] as const;
+
+export type AuditRow = {
+  id: string;
+  at: string;
+  action: string;
+  actionLabel: string;
+  actor: string;
+  target: string | null;
+  ok: boolean;
+  /** 人话摘要：`from=OPEN · to=RESOLVED`；失败时是错误码 */
+  summary: string;
+};
+
+export type AuditPanel = {
+  summary: AuditSummary;
+  rows: AuditRow[];
+};
+
+function summarizeDetail(detail: Record<string, unknown> | null): string {
+  if (!detail) return '';
+  const error = detail.error as { code?: string } | undefined;
+  if (error?.code) return `失败：${error.code}`;
+
+  const parts: string[] = [];
+  for (const key of DETAIL_KEYS) {
+    const value = detail[key];
+    if (value === undefined || value === null || value === '') continue;
+    if (typeof value === 'boolean' && !value) continue;
+    parts.push(`${key}=${String(value)}`);
+    if (parts.length >= 4) break;
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * 设置页的「操作审计」卡片数据。
+ *
+ * 只展示最近 12 条：这是给人快速确认"刚刚那下点成功了没有"用的，
+ * 真要按时间/动作翻查走 `GET /api/v1/audit`，别把页面做成日志浏览器。
+ */
+export async function getAuditPanel(limit = 12): Promise<AuditPanel> {
+  try {
+    const [summary, items] = await Promise.all([getAuditSummary(), listAudit({ limit })]);
+    return {
+      summary,
+      rows: items.map((item) => ({
+        id: item.id,
+        at: item.at,
+        action: item.action,
+        actionLabel: ACTION_LABEL[item.action] ?? item.action,
+        actor: item.actor,
+        target: item.target,
+        ok: item.result === 'OK',
+        summary: summarizeDetail(item.detail),
+      })),
+    };
+  } catch {
+    return {
+      summary: { total: 0, last24h: 0, failures: 0, byAction: [] },
+      rows: [],
+    };
   }
 }

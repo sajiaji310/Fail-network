@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createLogger } from '@/lib/logger';
 import { AppError, toErrorBody } from '@/lib/errors';
+import { readJsonLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { runScenario } from '@/modules/ingest/scenario';
 import { resetDemoData } from '@/modules/ingest/reset';
 
@@ -24,7 +26,7 @@ const BodySchema = z.object({
 export async function POST(req: Request) {
   const traceId = crypto.randomUUID();
   try {
-    const parsed = BodySchema.safeParse(await req.json());
+    const parsed = BodySchema.safeParse(await readJsonLimited(req));
     if (!parsed.success) {
       throw new AppError(
         'VALIDATION_FAILED',
@@ -34,16 +36,34 @@ export async function POST(req: Request) {
     }
 
     const { scenario, seed, reset } = parsed.data;
-    const resetSummary = reset ? await resetDemoData() : null;
-    let result;
-    try {
-      result = await runScenario(scenario, seed);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('剧本名不合法')) {
-        throw new AppError('VALIDATION_FAILED', error.message);
-      }
-      throw new AppError('NOT_FOUND', `剧本不存在：${scenario}`);
-    }
+    const result = await audited(
+      req,
+      {
+        action: 'scenario.inject',
+        target: scenario,
+        // reset 会清空演示数据，属于不可逆操作，必须留痕
+        detail: { seed: seed ?? null, reset: reset === true },
+        detailOf: (r) => ({
+          runId: r.runId,
+          accepted: r.ingest.accepted,
+          incidents: r.incidentIds.length,
+        }),
+        requestId: traceId,
+      },
+      async () => {
+        const resetSummary = reset ? await resetDemoData() : null;
+        let run;
+        try {
+          run = await runScenario(scenario, seed);
+        } catch (error) {
+          if (error instanceof Error && error.message.startsWith('剧本名不合法')) {
+            throw new AppError('VALIDATION_FAILED', error.message);
+          }
+          throw new AppError('NOT_FOUND', `剧本不存在：${scenario}`);
+        }
+        return { ...run, resetSummary };
+      },
+    );
 
     log.info('simulate_done', {
       traceId,
@@ -59,7 +79,7 @@ export async function POST(req: Request) {
         runId: result.runId,
         alertTotal: result.alertTotal,
         changes: result.changes,
-        reset: resetSummary,
+        reset: result.resetSummary,
         accepted: result.ingest.accepted,
         deduped: result.ingest.deduped,
         suppressed: result.ingest.suppressed,

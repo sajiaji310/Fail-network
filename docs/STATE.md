@@ -184,7 +184,17 @@
 - 真实端到端验证（production server :3100，`APP_ENV=production API_KEY=testkey123`）：health 脱敏 ✓ / live ✓ / ready ✓ / 写接口无 key 401 ✓ / 错 key 401 ✓ / 读接口放行 200 ✓ / 对 key 业务正常 ✓
 - 门禁：lint / typecheck / format / **test 198 passed (25 files)** / build / E2E 2 passed (30.8s) 全绿
 
-**MVP 取舍（已记录，待后续阶段消化）**：读接口（GET 查询、页面浏览）在 production 也不要求 API Key —— 单用户场景下全站 Basic Auth 会破坏浏览器体验，留给反向代理/Docker 网络层。RBAC、审计日志、流式 body 限制、verificationStatus 属于 review 第 1 阶段剩余项，未在本轮内。
+**MVP 取舍（已记录，待后续阶段消化）**：读接口（GET 查询、页面浏览）在 production 也不要求 API Key —— 单用户场景下全站 Basic Auth 会破坏浏览器体验，留给反向代理/Docker 网络层（审计接口例外，见下）。RBAC 属 review 第 4 阶段，本轮不做。
+
+### 第 1 阶段收口：审计、流式 body、案例可信度
+
+评审「第 1 阶段：生产边界与数据可信度」剩余三项已完成：
+
+- **审计日志**（`src/modules/audit/service.ts` + `AuditLog` 表）：8 个写动作全部留痕（研判 / 假设裁决 / 事件流转 / 导入 / 剧本注入 / 聚合 / 报告 / 案例确认）。`audited()` 包装路由，成功记 `OK`、失败记 `FAIL` 后原样抛错；`actor` 记 `local` 或 `api-key:…尾4位`；**不记请求体**。查询走 `GET /api/v1/audit`，`/settings` 页展示最近 12 条。审计写失败只降级成 warn 日志，不阻断业务。
+- **请求体流式限制**（`src/lib/http/body.ts`）：`readTextLimited` 边读边计字节，超限立刻 `cancel()` 断流并抛 413，覆盖 `Transfer-Encoding: chunked` 这条 Content-Length 检查防不住的路；所有写路由从 `req.json()` 换成它（顺带把非法 JSON 从 500 纠正为 400）。
+- **案例可信度**（`CaseVerification`）：结案时有人工采纳 → `VERIFIED`，只有系统首选 → `UNVERIFIED`；**RCA 召回只取 `VERIFIED`**，`UNVERIFIED/REJECTED` 留在案例库可查但不进上下文。新增 `PATCH /api/v1/cases/[id]` 人工确认/驳回，案例卡片带徽标与操作按钮。重复结案不覆盖人工裁决。
+- 门禁：lint / typecheck / format / **test 223 passed (28 files)** / build / **E2E 2 passed (38.3s)** 全绿。
+- 真实冒烟（dev :3000）：`GET /api/v1/audit` 有记录 ✓ / 案例 `UNVERIFIED → VERIFIED` ✓ / 研判 404 留 `FAIL` 记录 ✓ / 声明超限 413 ✓ / chunked 超限 413 ✓ / `/settings`、`/cases` 200 ✓
 
 ## 未完成 / 已知偏差
 

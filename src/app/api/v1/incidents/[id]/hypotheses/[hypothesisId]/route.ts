@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AppError, toErrorBody } from '@/lib/errors';
+import { readJsonLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { setHypothesisVerdict } from '@/modules/incidents/lifecycle';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +26,7 @@ export async function PATCH(
   const traceId = crypto.randomUUID();
   try {
     const { id, hypothesisId } = await ctx.params;
-    const raw = await req.json().catch(() => null);
+    const raw = await readJsonLimited(req);
     const parsed = BodySchema.safeParse(raw);
     if (!parsed.success) {
       throw new AppError(
@@ -34,15 +36,28 @@ export async function PATCH(
       );
     }
 
-    const result = await setHypothesisVerdict({
-      incidentIdOrCode: id,
-      hypothesisId,
-      verdict: parsed.data.verdict,
-      note: parsed.data.note ?? null,
-    });
-    if (!result) {
-      throw new AppError('NOT_FOUND', `事件或假设不存在：${id} / ${hypothesisId}`);
-    }
+    const result = await audited(
+      req,
+      {
+        action: 'hypothesis.verdict',
+        target: `${id}/${hypothesisId}`,
+        detail: { verdict: parsed.data.verdict, note: parsed.data.note ?? null },
+        detailOf: (r) => ({ acceptedHypothesisId: r.acceptedHypothesisId }),
+        requestId: traceId,
+      },
+      async () => {
+        const updated = await setHypothesisVerdict({
+          incidentIdOrCode: id,
+          hypothesisId,
+          verdict: parsed.data.verdict,
+          note: parsed.data.note ?? null,
+        });
+        if (!updated) {
+          throw new AppError('NOT_FOUND', `事件或假设不存在：${id} / ${hypothesisId}`);
+        }
+        return updated;
+      },
+    );
 
     return NextResponse.json(result, { headers: { 'x-trace-id': traceId } });
   } catch (error) {

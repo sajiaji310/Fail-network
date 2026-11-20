@@ -2,13 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createLogger } from '@/lib/logger';
 import { toErrorBody, AppError } from '@/lib/errors';
+import { readTextLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { parseCsv } from '@/modules/ingest/parsers/csv';
 import { parseJson } from '@/modules/ingest/parsers/json';
-import {
-  IngestCsvBodySchema,
-  IngestJsonBodySchema,
-  type ParseResult,
-} from '@/modules/ingest/schema';
+import { IngestCsvBodySchema, IngestJsonBodySchema } from '@/modules/ingest/schema';
 import { ingestAlerts } from '@/modules/ingest/service';
 
 export const dynamic = 'force-dynamic';
@@ -18,16 +16,17 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 const SourceOnly = z.object({ source: z.string().min(1).max(64) });
 
-async function readInput(req: Request): Promise<{ source: string; parse: ParseResult }> {
-  const contentType = req.headers.get('content-type') ?? '';
-  const urlSource = new URL(req.url).searchParams.get('source');
-
+function readInput(text: string, contentType: string, urlSource: string | null) {
   if (contentType.includes('text/csv') || contentType.includes('text/plain')) {
-    const text = await req.text();
     return { source: urlSource ?? 'csv-upload', parse: parseCsv(text) };
   }
 
-  const body: unknown = await req.json();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new AppError('VALIDATION_FAILED', '请求体不是合法 JSON');
+  }
 
   const jsonBody = IngestJsonBodySchema.safeParse(body);
   if (jsonBody.success) {
@@ -54,18 +53,27 @@ async function readInput(req: Request): Promise<{ source: string; parse: ParseRe
 export async function POST(req: Request) {
   const traceId = crypto.randomUUID();
   try {
-    const declared = Number(req.headers.get('content-length') ?? 0);
-    if (declared > MAX_BODY_BYTES) {
-      throw new AppError('VALIDATION_FAILED', '请求体超过 2MB 限制');
-    }
+    const contentType = req.headers.get('content-type') ?? '';
+    const urlSource = new URL(req.url).searchParams.get('source');
+    // 边读边计数：chunked 上传也能在超限瞬间断开，不靠 Content-Length 自证
+    const text = await readTextLimited(req, MAX_BODY_BYTES);
 
-    const { source, parse } = await readInput(req);
+    const { source, parse } = readInput(text, contentType, urlSource);
 
     if (parse.rows.length === 0) {
       throw new AppError('VALIDATION_FAILED', '没有可导入的告警行', parse.issues.slice(0, 20));
     }
 
-    const result = await ingestAlerts(source, parse.rows);
+    const result = await audited(
+      req,
+      {
+        action: 'alert.ingest',
+        target: source,
+        detail: { rows: parse.rows.length },
+        requestId: traceId,
+      },
+      () => ingestAlerts(source, parse.rows),
+    );
     const issues = [...parse.issues, ...result.issues].slice(0, 50);
 
     log.info('ingest_done', {

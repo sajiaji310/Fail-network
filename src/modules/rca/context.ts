@@ -204,9 +204,16 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
   return trimBundle(bundle);
 }
 
-/** 案例召回（ADR-002：量 < 1000 时用 tag 交集过滤 + 内存排序，不上向量库） */
+/**
+ * 案例召回（ADR-002：量 < 1000 时用 tag 交集过滤 + 内存排序，不上向量库）。
+ *
+ * **只召回 VERIFIED**（评审 P0-3）：未经人工确认的机器猜测一旦进入上下文，
+ * 就会被下一轮研判当成"历史经验"引用，错误会自我放大。
+ * UNVERIFIED 的案例在案例库里照常可查，只是不参与召回。
+ */
 async function recallCases(alertTypes: string[]): Promise<ContextCase[]> {
   const rows = await db.caseRecord.findMany({
+    where: { verification: 'VERIFIED' },
     orderBy: { createdAt: 'desc' },
     take: 200,
     select: {

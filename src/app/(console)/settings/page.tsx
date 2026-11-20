@@ -2,8 +2,11 @@ import Link from 'next/link';
 import { Check, KeyRound, X } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ScenarioInject } from '@/components/domain/scenario-inject';
+import { absTime } from '@/lib/utils/time';
 import { getIncidentStats } from '@/modules/incidents/service';
 import {
+  auditActionLabel,
+  getAuditPanel,
   getModelConfig,
   getScenarios,
   getThresholds,
@@ -27,7 +30,11 @@ export default async function SettingsPage() {
   const model = getModelConfig();
   const thresholds = getThresholds();
   const scenarios = getScenarios();
-  const [usage, incidentStats] = await Promise.all([getTokenUsage(), getIncidentStats()]);
+  const [usage, incidentStats, audit] = await Promise.all([
+    getTokenUsage(),
+    getIncidentStats(),
+    getAuditPanel(),
+  ]);
 
   const envRows: { label: string; value: string; mono?: boolean; ok?: boolean }[] = [
     { label: 'Provider', value: model.provider, mono: true },
@@ -184,6 +191,77 @@ export default async function SettingsPage() {
             概览
           </Link>{' '}
           的数据基线变化。
+        </p>
+      </Card>
+
+      <Card className="mt-4">
+        <CardTitle
+          hint={`近 24 小时 ${audit.summary.last24h} 次 · 失败 ${audit.summary.failures} 次`}
+        >
+          操作审计
+        </CardTitle>
+
+        {audit.summary.byAction.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {audit.summary.byAction.map((item) => (
+              <span
+                key={item.action}
+                className="rounded-[3px] bg-surface-muted px-1.5 py-0.5 text-[10.5px] text-text-secondary"
+              >
+                {auditActionLabel(item.action)}
+                <span className="ml-1 font-mono text-[9.5px] text-text-tertiary">{item.count}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {audit.rows.length > 0 ? (
+          <table className="w-full text-[11.5px]">
+            <thead>
+              <tr className="text-left text-text-tertiary">
+                <th className="pb-1 font-normal">时间</th>
+                <th className="pb-1 font-normal">动作</th>
+                <th className="pb-1 font-normal">对象</th>
+                <th className="pb-1 text-right font-normal">结果</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audit.rows.map((row) => (
+                <tr key={row.id} className="border-t border-border/70 align-top">
+                  <td className="tabular py-1 font-mono text-[10.5px] text-text-tertiary">
+                    {absTime(row.at)}
+                  </td>
+                  <td className="py-1 text-text-secondary">
+                    {row.actionLabel}
+                    <span className="ml-1 font-mono text-[10px] text-text-tertiary">
+                      {row.actor}
+                    </span>
+                  </td>
+                  <td className="py-1 text-text-secondary">
+                    <span className="font-mono text-[10.5px]">{row.target ?? '—'}</span>
+                    {row.summary ? (
+                      <span className="ml-1.5 text-[10.5px] text-text-tertiary">{row.summary}</span>
+                    ) : null}
+                  </td>
+                  <td
+                    className={`py-1 text-right text-[10.5px] ${row.ok ? 'text-ok' : 'text-danger'}`}
+                  >
+                    {row.ok ? '成功' : '失败'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-[11.5px] text-text-tertiary">
+            还没有审计记录。研判、裁决、结案、导入任一动作都会在这里留痕。
+          </p>
+        )}
+
+        <p className="mt-3 text-[11.5px] leading-relaxed text-text-tertiary">
+          审计记的是「谁在什么时候对哪个资源做了什么、成没成」，落库不落日志文件 ——
+          日志会被滚掉，事后追责只能靠它。完整记录走{' '}
+          <code className="font-mono">GET /api/v1/audit</code>（production 下需要 API Key）。
         </p>
       </Card>
 

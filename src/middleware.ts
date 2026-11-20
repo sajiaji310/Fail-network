@@ -1,15 +1,18 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * 安全边界中间件（P0）。
+ * 安全边界中间件（P0 + 第 1 阶段）。
  *
- * - API Key：仅 production 环境、且 /api/v1/* 的写方法（POST/PATCH/PUT/DELETE）需要
- *   `x-api-key`。local/staging 放行 —— 保证 E2E、评测脚本、本地开发不被破坏。
+ * - API Key：仅 production 环境生效，覆盖两类请求：
+ *   1. `/api/v1/*` 的写方法（POST/PATCH/PUT/DELETE）；
+ *   2. `/api/v1/audit` 的读请求 —— 审计表能反推"谁动了什么"，不能和普通读接口一样敞开。
+ *   local/staging 放行 —— 保证 E2E、评测脚本、本地开发不被破坏。
  * - 限流：全环境、按 IP 的内存滑动窗口。写接口更严（默认 30/min），读接口宽松（120/min）。
  *   单实例 MVP 够用；多实例需换成 Redis 计数器。
- * - 请求体大小：写请求按 Content-Length 兜底；chunked 流式限制由各 handler 自行实现。
+ * - 请求体大小：这里只按 Content-Length 做"明显超限直接打回"，
+ *   chunked 上传由 `lib/http/body.ts` 边读边计数拦截。
  *
- * 读接口（GET 查询、页面浏览）不要求 API Key —— MVP 单用户场景下，
+ * 其余读接口（查询、页面浏览）不要求 API Key —— MVP 单用户场景下，
  * 全站 Basic Auth 会破坏浏览器体验，留给反向代理/Docker 网络层处理。
  */
 const APP_ENV = process.env.APP_ENV ?? 'local';
@@ -19,6 +22,8 @@ const READ_LIMIT = Number(process.env.RATE_LIMIT_READ_PER_MIN ?? 120);
 const BODY_LIMIT = Number(process.env.BODY_LIMIT_BYTES ?? 2 * 1024 * 1024);
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+/** 读也需要 Key 的敏感路径：审计、将来的配置导出 */
+const PROTECTED_READ_PATHS = ['/api/v1/audit'];
 const WINDOW_MS = 60_000;
 
 type Bucket = { w: number[]; r: number[] };
@@ -57,8 +62,12 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  // API Key：production + 写接口
-  if (APP_ENV === 'production' && isWrite && pathname.startsWith('/api/v1/')) {
+  // API Key：production + 写接口（以及敏感读接口）
+  const needsAuth =
+    pathname.startsWith('/api/v1/') &&
+    (isWrite || PROTECTED_READ_PATHS.some((prefix) => pathname.startsWith(prefix)));
+
+  if (APP_ENV === 'production' && needsAuth) {
     if (!API_KEY) {
       return reject('SERVER_MISCONFIG', 'production 环境未配置 API_KEY', 500);
     }

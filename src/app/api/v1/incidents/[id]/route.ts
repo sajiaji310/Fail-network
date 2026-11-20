@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AppError, toErrorBody } from '@/lib/errors';
+import { readJsonLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { getIncidentDetail } from '@/modules/incidents/detail';
 import { transitionIncident } from '@/modules/incidents/lifecycle';
 
@@ -37,7 +39,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const traceId = crypto.randomUUID();
   try {
     const { id } = await ctx.params;
-    const raw = await req.json().catch(() => null);
+    const raw = await readJsonLimited(req);
     const parsed = PatchSchema.safeParse(raw);
     if (!parsed.success) {
       throw new AppError(
@@ -47,14 +49,27 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       );
     }
 
-    const result = await transitionIncident({
-      idOrCode: id,
-      to: parsed.data.status,
-      note: parsed.data.note ?? null,
-    });
-    if (!result) {
-      throw new AppError('NOT_FOUND', `事件不存在：${id}`);
-    }
+    const result = await audited(
+      req,
+      {
+        action: 'incident.transition',
+        target: id,
+        detail: { to: parsed.data.status, note: parsed.data.note ?? null },
+        detailOf: (r) => ({ code: r.code, from: r.from, changed: r.changed }),
+        requestId: traceId,
+      },
+      async () => {
+        const transitioned = await transitionIncident({
+          idOrCode: id,
+          to: parsed.data.status,
+          note: parsed.data.note ?? null,
+        });
+        if (!transitioned) {
+          throw new AppError('NOT_FOUND', `事件不存在：${id}`);
+        }
+        return transitioned;
+      },
+    );
 
     return NextResponse.json(result, { headers: { 'x-trace-id': traceId } });
   } catch (error) {

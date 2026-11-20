@@ -9,17 +9,32 @@
 | code                    | HTTP | 场景                                              |
 | ----------------------- | ---- | ------------------------------------------------- |
 | `VALIDATION_FAILED`     | 400  | zod 校验失败，details 带字段路径                  |
+| `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配         |
 | `NOT_FOUND`             | 404  | 资源不存在                                        |
 | `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`） |
 | `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                        |
+| `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）         |
+| `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`     |
 | `LLM_UNAVAILABLE`       | 503  | 模型超时且降级也失败                              |
 | `INTERNAL`              | 500  | 兜底，日志带 traceId                              |
 
 ## 系统
 
-| Method | Path          | 说明     | 备注                                                                       |
-| ------ | ------------- | -------- | -------------------------------------------------------------------------- |
-| GET    | `/api/health` | 健康检查 | `{status, db:'up'\|'down', llm:'live'\|'mock'\|'fallback', llmModel, ...}` |
+| Method | Path          | 说明             | 备注                                                                                               |
+| ------ | ------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/api/live`   | 存活探针         | 不查库，进程活着就 200；用于容器 `livenessProbe`                                                   |
+| GET    | `/api/ready`  | 就绪探针         | 查库；库不可用返回 503，用于 `readinessProbe`                                                      |
+| GET    | `/api/health` | 健康检查（脱敏） | `{status, db:'up'\|'down', llm:'live'\|'mock'\|'fallback', traceId}`；数据库错误只进日志，不出响应 |
+
+## 安全边界
+
+| 维度     | 规则                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| 鉴权     | 仅 `APP_ENV=production` 生效：`/api/v1/*` 写方法 + `/api/v1/audit` 读方法需要 `x-api-key`；local 放行 |
+| 限流     | 全环境按 IP 滑动窗口：写 30/min、读 120/min（`RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN`） |
+| 请求体   | 声明超限由中间件直接 413；chunked 上传由 `lib/http/body.ts` 边读边计数，超限立即断流                  |
+| 数据库   | `docker-compose.yml` 端口绑 `127.0.0.1`，不对外暴露                                                   |
+| 健康检查 | 不返回数据库错误原文、连接串、主机名                                                                  |
 
 ## 告警
 
@@ -85,12 +100,49 @@
 
 ## 案例
 
-| Method | Path                   | 说明            | 关键参数                                                                     |
-| ------ | ---------------------- | --------------- | ---------------------------------------------------------------------------- |
-| GET    | `/api/v1/cases`        | 案例列表 / 检索 | `?q=&tag=&page=&pageSize=`；`q` 按空格分词后**逐词 AND**                     |
-| GET    | `/api/v1/cases/search` | 相似案例召回    | `?q=&incidentId=&limit=3`；只给 `incidentId` 时按告警类型/层级召回并排除自身 |
+| Method | Path                   | 说明               | 关键参数                                                                     |
+| ------ | ---------------------- | ------------------ | ---------------------------------------------------------------------------- |
+| GET    | `/api/v1/cases`        | 案例列表 / 检索    | `?q=&tag=&verification=&page=&pageSize=`；`q` 按空格分词后**逐词 AND**       |
+| GET    | `/api/v1/cases/search` | 相似案例召回（UI） | `?q=&incidentId=&limit=3`；只给 `incidentId` 时按告警类型/层级召回并排除自身 |
+| PATCH  | `/api/v1/cases/[id]`   | 人工确认 / 驳回    | body `{verification:'VERIFIED'\|'REJECTED'\|'UNVERIFIED', note?}`            |
 
 `q` 命中范围：`title / symptom / rootCause / resolution`（不区分大小写）与 `tags`（精确匹配）。
+
+**`verification` 决定召回资格**（评审 P0-3）：
+
+| 值           | 产生方式                           | 是否进入研判上下文 |
+| ------------ | ---------------------------------- | ------------------ |
+| `VERIFIED`   | 结案时有人工采纳的假设，或人工确认 | 是                 |
+| `UNVERIFIED` | 结案时只有系统首选（机器猜测）     | 否                 |
+| `REJECTED`   | 人工驳回                           | 否                 |
+
+`UNVERIFIED` 的案例在案例库中照常可查（它是线索，不是结论），但不参与
+`buildIncidentContext` 的案例召回 —— 未确认的机器猜测一旦回流，会被下一轮研判
+当成"历史经验"引用，错误会自我放大。
+
+## 审计
+
+| Method | Path            | 说明         | 关键参数                                        |
+| ------ | --------------- | ------------ | ----------------------------------------------- |
+| GET    | `/api/v1/audit` | 操作审计查询 | `?action=&result=OK\|FAIL&limit=30`（上限 200） |
+
+返回 `{ items: [{ at, action, actor, target, result, detail, requestId, ip }], total }`。
+
+写入时机（由 `audited()` 包装路由，成功记 `OK`、失败记 `FAIL` 后原样抛错）：
+
+| action                | 触发端点                                        |
+| --------------------- | ----------------------------------------------- |
+| `analyze.run`         | `POST /api/v1/incidents/[id]/analyze`           |
+| `hypothesis.verdict`  | `PATCH /api/v1/incidents/[id]/hypotheses/[hid]` |
+| `incident.transition` | `PATCH /api/v1/incidents/[id]`                  |
+| `alert.ingest`        | `POST /api/v1/ingest/alerts`                    |
+| `scenario.inject`     | `POST /api/v1/ingest/simulate`                  |
+| `correlation.run`     | `POST /api/v1/correlation/run`                  |
+| `report.generate`     | `POST /api/v1/incidents/[id]/report`            |
+| `case.verify`         | `PATCH /api/v1/cases/[id]`                      |
+
+`actor` 记 `local` 或 `api-key:…<尾4位>`；**不记请求体**，`detail` 只含路由显式声明的小字段。
+审计写入失败只降级成一条 warn 日志，不影响业务结果 —— 宁可少一条记录，不能因为审计挂了就让结案失败。
 
 ### POST /api/v1/incidents/[id]/analyze — 返回结构
 

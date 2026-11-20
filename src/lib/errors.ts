@@ -4,9 +4,12 @@
  */
 export const ERROR_CODES = {
   VALIDATION_FAILED: { status: 400, message: '参数校验失败' },
+  UNAUTHORIZED: { status: 401, message: '缺少或错误的凭证' },
   NOT_FOUND: { status: 404, message: '资源不存在' },
   INVALID_TRANSITION: { status: 409, message: '事件状态非法流转' },
   DUPLICATE_FINGERPRINT: { status: 409, message: '告警指纹冲突' },
+  PAYLOAD_TOO_LARGE: { status: 413, message: '请求体过大' },
+  RATE_LIMITED: { status: 429, message: '请求过于频繁' },
   LLM_UNAVAILABLE: { status: 503, message: '模型不可用且降级失败' },
   INTERNAL: { status: 500, message: '服务内部错误' },
 } as const;

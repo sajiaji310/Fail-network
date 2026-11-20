@@ -48,21 +48,29 @@ enum LinkStatus {
   DEGRADED
 }
 
+/// 案例可信度（评审 P0-3「案例污染率 = 0」）：
+/// 未人工确认的案例可以留在库里供人查阅，但**不参与**下次研判的召回。
+enum CaseVerification {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
 model Device {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id        String     @id @default(cuid())
+  name      String     @unique
   type      DeviceType
   vendor    String?
   model     String?
   ip        String?
   site      String?
-  layer     Int      @default(3) // 1 核心 2 汇聚 3 接入
-  createdAt DateTime @default(now())
+  layer     Int        @default(3) // 1 核心 2 汇聚 3 接入
+  createdAt DateTime   @default(now())
 
   fingerprints AlertFingerprint[]
   changes      ChangeRecord[]
-  linksFrom    TopologyLink[]      @relation("src")
-  linksTo      TopologyLink[]      @relation("dst")
+  linksFrom    TopologyLink[]     @relation("src")
+  linksTo      TopologyLink[]     @relation("dst")
 
   @@index([type, site])
 }
@@ -97,20 +105,20 @@ model AlertFingerprint {
 
 // 发生：一次实际告警周期（30 分钟规则决定新建还是累加）
 model Alert {
-  id            String      @id @default(cuid())
-  fingerprintId String
-  severity      Severity
-  value         Float?
-  threshold     Float?
-  message       String
-  status        AlertStatus @default(ACTIVE)
-  count         Int         @default(1)
-  firstSeen     DateTime
-  lastSeen      DateTime
-  cycleStart    DateTime // = firstSeen，参与唯一约束
-  externalKey   String? // 外部系统告警 ID，导入幂等
-  raw           Json?
-  incidentId    String?
+  id                  String      @id @default(cuid())
+  fingerprintId       String
+  severity            Severity
+  value               Float?
+  threshold           Float?
+  message             String
+  status              AlertStatus @default(ACTIVE)
+  count               Int         @default(1)
+  firstSeen           DateTime
+  lastSeen            DateTime
+  cycleStart          DateTime // = firstSeen，参与唯一约束
+  externalKey         String? // 外部系统告警 ID，导入幂等
+  raw                 Json?
+  incidentId          String?
   /// 抑制溯源：被哪条父告警压制。父告警恢复时按此精确回滚（4.3 状态图 SUPPRESSED→ACTIVE）
   suppressedByAlertId String?
 
@@ -176,42 +184,76 @@ model Incident {
 }
 
 model Hypothesis {
-  id         String   @id @default(cuid())
-  incidentId String
-  rank       Int
-  cause      String
-  category   String // HARDWARE / CONFIG / LINK / CAPACITY / UPSTREAM / OTHER
-  confidence Float
-  evidence   Json // [{type:'ALERT'|'CHANGE'|'TOPOLOGY'|'CASE', ref:string, desc:string}]
+  id          String    @id @default(cuid())
+  incidentId  String
+  rank        Int
+  cause       String
+  category    String // HARDWARE / CONFIG / LINK / CAPACITY / UPSTREAM / OTHER
+  confidence  Float
+  evidence    Json // [{type:'ALERT'|'CHANGE'|'TOPOLOGY'|'CASE', ref:string, desc:string}]
   verifySteps Json // string[]
-  actions    Json // [{action, risk:'LOW'|'MEDIUM'|'HIGH', requiresApproval:boolean}]
-  source     String // LLM | RULE_FALLBACK
-  model      String?
-  tokensUsed Int?
+  actions     Json // [{action, risk:'LOW'|'MEDIUM'|'HIGH', requiresApproval:boolean}]
+  source      String // LLM | RULE_FALLBACK
+  model       String?
+  tokensUsed  Int?
   /// 人工裁决（T08）：ACCEPTED / REJECTED，null = 未裁决。重新研判会整体替换假设，裁决随之清空
   verdict     String?
   verdictAt   DateTime?
   verdictNote String?
-  createdAt  DateTime @default(now())
-  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  incident    Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@index([incidentId, rank])
 }
 
 model CaseRecord {
-  id         String   @id @default(cuid())
-  incidentId String   @unique
-  title      String
-  symptom    String
-  rootCause  String
-  resolution String
-  tags       String[]
+  id           String           @id @default(cuid())
+  incidentId   String           @unique
+  title        String
+  symptom      String
+  rootCause    String
+  resolution   String
+  tags         String[]
+  /// 案例可信度：结案时有「人工采纳的假设」才自动置 VERIFIED，否则 UNVERIFIED。
+  /// 只有 VERIFIED 参与 RCA 召回 —— 未经人确认的机器猜测不能当老师傅经验用。
+  verification CaseVerification @default(UNVERIFIED)
+  verifiedAt   DateTime?
+  /// 人工确认/驳回的操作者（API Key 场景记 key 尾号，本地记 local）
+  verifiedBy   String?
+  verifyNote   String?
   /// P1: pgvector vector(1536)，MVP 本地无扩展故留空
-  embedding  String?
-  createdAt  DateTime @default(now())
-  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  embedding    String?
+  createdAt    DateTime         @default(now())
+  incident     Incident         @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@index([title])
+  @@index([verification, createdAt])
+}
+
+/// 操作审计（评审第 1 阶段「审计日志」）。
+///
+/// 记的是"谁在什么时候对哪个资源做了什么、成没成"，不是调试日志：
+/// 调试日志可以丢、可以降级，审计记录必须落库，否则事后无法回答
+/// "这条假设是谁采纳的、这个事件是谁结案的"。
+model AuditLog {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  /// 动作：analyze.run / hypothesis.verdict / incident.transition / alert.ingest
+  /// / scenario.inject / correlation.run / report.generate / case.verify
+  action    String
+  /// 操作者：api-key:<尾4位> / local / system
+  actor     String
+  /// 目标资源：事件编码、假设 id、案例 id；无目标的批量动作记来源名
+  target    String?
+  /// OK / FAIL —— 失败也要留痕，否则"谁把数据删了"永远查不出来
+  result    String
+  /// 失败原因或补充信息，**禁止写入密钥、完整请求体**
+  detail    Json?
+  requestId String?
+  ip        String?
+
+  @@index([at])
+  @@index([action, at])
 }
 
 model Report {

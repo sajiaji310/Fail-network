@@ -28,6 +28,8 @@ NetScope 把这三件事串成一条链：告警先被压成事件，事件被�
 | 事件工作台     | 时间线 / 拓扑影响面高亮 / 根因与证据面板三栏联动                                |
 | 根因研判       | 规则引擎候选 → LLM 结构化输出 → L1/L2/L3 证据校验，无 key 自动降级规则引擎      |
 | 人工确认与结案 | 状态机流转（含拦截非法跳转）、假设采纳/否决、四段式复盘报告、案例入库           |
+| 案例可信度     | 结案时有人工采纳才标 `VERIFIED`，只有已验证案例进入下次研判召回                 |
+| 安全与审计     | production 下写接口 API Key + 限流 + 流式 body 限制，8 类写动作落库留痕         |
 
 ### 概览：健康自检与数据基线
 
@@ -40,6 +42,8 @@ NetScope 把这三件事串成一条链：告警先被压成事件，事件被�
 ### 案例库：结案自动沉淀，可按现象/根因/标签检索
 
 ![案例库](docs/screenshots/cases.png)
+
+卡片上的「已验证 / 待确认」是召回资格，不是装饰：结案时有人工采纳的假设才标为已验证，只有已验证的案例会进入下一次研判的上下文 —— 未经确认的机器猜测留在库里可查，但不会被当成历史经验引用。
 
 界面统一走 `src/app/globals.css` 的 `@theme` 令牌：冷中性灰底、分层阴影、细描边，组件内不写死色值。卡片、状态徽标、分段筛选器、按钮分别收敛为 `ui/card.tsx`、`ui/status-pill.tsx`、`ui/tabs.tsx`、`ui/button.tsx`，改一处配色即全局生效。以上截图由 `node scripts/screenshots.mjs` 注入剧本后真实渲染生成，不是手摆的示意图。
 
@@ -55,7 +59,7 @@ flowchart LR
 
 分层：`app/api` → `modules`（业务规则唯一归属）→ `lib`（无业务语义）。禁止反向依赖。
 
-10 张表：`Device` / `TopologyLink` / `AlertFingerprint` / `Alert` / `Incident` / `ChangeRecord` / `CaseRecord` / `Hypothesis` / `Report`。
+10 张表：`Device` / `TopologyLink` / `AlertFingerprint` / `Alert` / `Incident` / `ChangeRecord` / `CaseRecord` / `Hypothesis` / `Report` / `AuditLog`。
 
 ## 快速开始
 
@@ -141,7 +145,7 @@ npm run eval -- --set=dev       # 16 个开发场景
 npm run lint && npm run typecheck && npm run test && npm run build
 ```
 
-191 个单测（24 文件），CI 与本地一致，全绿才允许合并。
+223 个单测（28 文件），含数据库集成用例；CI 与本地一致，全绿才允许合并。
 
 两条 Playwright E2E 覆盖主路径：
 

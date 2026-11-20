@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AppError, toErrorBody } from '@/lib/errors';
+import { readJsonLimited } from '@/lib/http/body';
+import { audited } from '@/modules/audit/service';
 import { generateReport, getLatestReport } from '@/modules/report/service';
 
 export const dynamic = 'force-dynamic';
@@ -19,13 +21,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const { id } = await ctx.params;
     const url = new URL(req.url);
     const save = url.searchParams.get('save') !== '0';
-    const body = (await req.json().catch(() => null)) as { note?: unknown } | null;
+    const body = (await readJsonLimited(req)) as { note?: unknown } | null;
     const note = typeof body?.note === 'string' ? body.note : null;
 
-    const report = await generateReport(id, { save, note });
-    if (!report) {
-      throw new AppError('NOT_FOUND', `事件不存在：${id}`);
-    }
+    const report = await audited(
+      req,
+      {
+        action: 'report.generate',
+        target: id,
+        detail: { save },
+        detailOf: (r) => ({ code: r.code, charCount: r.charCount, reportId: r.reportId }),
+        requestId: traceId,
+      },
+      async () => {
+        const generated = await generateReport(id, { save, note });
+        if (!generated) {
+          throw new AppError('NOT_FOUND', `事件不存在：${id}`);
+        }
+        return generated;
+      },
+    );
 
     return new NextResponse(report.markdown, {
       headers: {

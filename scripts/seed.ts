@@ -134,6 +134,12 @@ async function seedCases() {
         rootCause: c.rootCause,
         resolution: c.resolution,
         tags: [...c.tags, c.category],
+        // 种子案例是人工整理的「正确经验」，等同于确认过的案例 ——
+        // 不标 VERIFIED 的话它们不会进入研判召回，演示里就没有历史案例信号了
+        verification: 'VERIFIED',
+        verifiedAt: new Date(),
+        verifiedBy: 'seed',
+        verifyNote: '演示基线数据（人工整理）',
       },
       update: {
         title: c.title,
@@ -141,6 +147,10 @@ async function seedCases() {
         rootCause: c.rootCause,
         resolution: c.resolution,
         tags: [...c.tags, c.category],
+        verification: 'VERIFIED',
+        verifiedAt: new Date(),
+        verifiedBy: 'seed',
+        verifyNote: '演示基线数据（人工整理）',
       },
     });
   }
