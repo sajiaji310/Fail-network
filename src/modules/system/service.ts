@@ -12,8 +12,20 @@ export type SystemStatus = {
   node: string;
   stage: string;
   checkedAt: string;
+  /** 数据库错误明细：仅供内部诊断/概览页，不进对外 health 接口（P0-2 脱敏） */
   dbError?: string;
 };
+
+/** 对外健康接口的脱敏视图：不含 dbError / dbVersion / node 等可能泄露内部拓扑的字段 */
+export type PublicHealth = {
+  status: 'ok' | 'degraded';
+  db: DbStatus;
+  llm: LlmMode;
+};
+
+export function toPublicHealth(s: SystemStatus): PublicHealth {
+  return { status: s.status, db: s.db, llm: s.llm };
+}
 
 const STAGE = 'T09 评测与发布';
 

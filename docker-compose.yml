@@ -8,7 +8,9 @@ services:
       POSTGRES_USER: netscope
       POSTGRES_PASSWORD: netscope
       POSTGRES_DB: netscope
-    ports: ['5432:5432']
+    # 默认只绑本机回环：避免把数据库暴露到所有网卡（P0-1 安全边界）。
+    # 生产部署应删除此 ports 块，或改为反代后的内网地址。
+    ports: ['127.0.0.1:5432:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U netscope -d netscope']
@@ -20,7 +22,8 @@ services:
   app:
     build: .
     container_name: netscope-app
-    ports: ['3000:3000']
+    # 默认只绑本机回环；需公网访问请前置反向代理 + TLS（P0-1）
+    ports: ['127.0.0.1:3000:3000']
     # 注意：.env 里的 DATABASE_URL 指向 localhost（本地开发用），
     # 容器内 localhost 是 app 自己，必须在这里覆盖成服务名 db。
     # environment 的优先级高于 env_file，所以这条会生效。
@@ -31,6 +34,9 @@ services:
       LLM_MOCK: ${LLM_MOCK:-true}
       SEED_ON_START: 'true'
       LOG_LEVEL: info
+      # —— 安全边界（P0）：production 才强制 API Key，local 放行 ——
+      APP_ENV: ${APP_ENV:-local}
+      API_KEY: ${API_KEY:-}
     env_file: [.env]
     depends_on:
       db: { condition: service_healthy }

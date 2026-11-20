@@ -168,8 +168,23 @@
 | 下载断言     | 原实现在 `anchor.click()` 后同步 `revokeObjectURL` 且未挂 DOM → 下载被掐断；改为挂载 + `setTimeout` 延迟撤销后通过                                 |
 | 生产启动     | `NEXT_DIST_DIR=.next-serve PORT=3100 npm run start` → `/api/health` 200，`stage:"T09 评测与发布"`，路由表 21 条（详情页首屏 192 kB / 拓扑 175 kB） |
 | 截图         | 5 张 1440×900 @2x（overview / incidents / incident-detail / topology / cases），生产构建实拍，无开发浮层                                           |
-| 单测         | `191 passed (24 files)`                                                                                                                            |
+| 单测         | `198 passed (25 files)`                                                                                                                            |
 | 构建体积     | 首屏共享 JS 102 kB；最重页面 `/incidents/[id]` 22.7 kB 页面代码                                                                                    |
+
+### P0 安全边界（review `PRODUCT-ENGINEERING-REVIEW.md` 后追加）
+
+用户对 NetScope 做了一次产品+工程评审，按评审 P0-1/P0-2 补安全边界（让 MVP 能安全给别人试用）：
+
+- `src/lib/env.ts`：新增 `APP_ENV(local|staging|production)`、`API_KEY`、`RATE_LIMIT_*`、`BODY_LIMIT_BYTES`
+- `src/middleware.ts`（新建）：production 下 `/api/v1/*` 写接口必须带 `x-api-key`；全环境 IP 滑动窗口限流（写 30/min、读 120/min）；写请求 body 大小兜底。**local 放行**，不破坏 E2E/评测/本地开发
+- health 脱敏（P0-2）：对外只返回 `{status,db,llm,traceId}`，`dbError` 只写结构化日志；新增 `/api/live`（不查库，存活探针）与 `/api/ready`（查库，就绪探针）
+- `docker-compose.yml`：db 与 app 端口默认绑 `127.0.0.1`，不再暴露到所有网卡；compose 透传 `APP_ENV`/`API_KEY`
+- `.env.example` 补全部新变量与注释
+- 单测 7 条锁住鉴权/限流/body guard：local 放行、production 无 key 401、错 key 401、API_KEY 未配 500、读接口放行、body 超限 413、限流 429
+- 真实端到端验证（production server :3100，`APP_ENV=production API_KEY=testkey123`）：health 脱敏 ✓ / live ✓ / ready ✓ / 写接口无 key 401 ✓ / 错 key 401 ✓ / 读接口放行 200 ✓ / 对 key 业务正常 ✓
+- 门禁：lint / typecheck / format / **test 198 passed (25 files)** / build / E2E 2 passed (30.8s) 全绿
+
+**MVP 取舍（已记录，待后续阶段消化）**：读接口（GET 查询、页面浏览）在 production 也不要求 API Key —— 单用户场景下全站 Basic Auth 会破坏浏览器体验，留给反向代理/Docker 网络层。RBAC、审计日志、流式 body 限制、verificationStatus 属于 review 第 1 阶段剩余项，未在本轮内。
 
 ## 未完成 / 已知偏差
 

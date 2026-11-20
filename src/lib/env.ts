@@ -17,6 +17,16 @@ const EnvSchema = z.object({
   PG_HOME: z.string().optional(),
   PGDATA: z.string().optional(),
   PGPORT: z.string().default('5432'),
+  // —— 安全边界（P0）：local 放行，production 才强制鉴权 ——
+  APP_ENV: z.enum(['local', 'staging', 'production']).default('local'),
+  API_KEY: z.string().default(''),
+  RATE_LIMIT_WRITE_PER_MIN: z.coerce.number().int().min(1).default(30),
+  RATE_LIMIT_READ_PER_MIN: z.coerce.number().int().min(1).default(120),
+  BODY_LIMIT_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .default(2 * 1024 * 1024),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
