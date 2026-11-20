@@ -12,6 +12,8 @@
 | `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配         |
 | `NOT_FOUND`             | 404  | 资源不存在                                        |
 | `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`） |
+| `ALREADY_CLAIMED`       | 409  | 事件已被他人接手，`details` 带当前责任人          |
+| `INCIDENT_CLOSED`       | 409  | 事件已结束，不能再变更处理人                      |
 | `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                        |
 | `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）         |
 | `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`     |
@@ -55,17 +57,69 @@
 
 ## 事件
 
-| Method | Path                                               | 说明                   | 备注                                                                                                                                    |
-| ------ | -------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/v1/incidents`                                | 事件列表               | `?status=&severity=&page=&pageSize=`                                                                                                    |
-| GET    | `/api/v1/incidents/[id]`                           | 事件详情               | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline / topology |
-| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）        | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                               |
-| POST   | `/api/v1/incidents/[id]/split`                     | 事件拆分（人工纠错）   | body `{alertIds:[...], note?}`；见下节                                                                                                  |
-| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08） | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                                 |
-| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）    | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                               |
-| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）    | 返回 `text/markdown`；没生成过则 404                                                                                                    |
-| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）         | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE                                                                     |
-| POST   | `/api/v1/correlation/run`                          | 手动触发聚合           | body `{now?}`；返回 `{created, updated, reopened, converged, merged}`                                                                   |
+| Method | Path                                               | 说明                      | 备注                                                                                                                                    |
+| ------ | -------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/incidents`                                | 事件列表                  | `?status=&severity=&queue=&page=&pageSize=`；`queue=UNASSIGNED\|UNANALYZED\|AWAITING_CONFIRM` 即值班队列                                |
+| GET    | `/api/v1/incidents/[id]`                           | 事件详情                  | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline / topology |
+| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）           | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                               |
+| POST   | `/api/v1/incidents/[id]/claim`                     | 接手 / 转派（第 3 阶段）  | body `{assignee, team?, note?, force?}`；抢单 409 `ALREADY_CLAIMED`，已结束 409 `INCIDENT_CLOSED`                                       |
+| DELETE | `/api/v1/incidents/[id]/claim`                     | 释放回队列                | 保留 `claimedAt`（响应已经发生过，不能洗掉）                                                                                            |
+| POST   | `/api/v1/incidents/[id]/split`                     | 事件拆分（人工纠错）      | body `{alertIds:[...], note?}`；见下节                                                                                                  |
+| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08）    | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                                 |
+| POST   | `/api/v1/incidents/[id]/hypotheses/[hid]/verify`   | 勾选验证步骤（第 3 阶段） | body `{stepIndex, done, note?}`；`by` 由服务端从请求身份解析，不接受前端自称                                                            |
+| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）       | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                               |
+| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）       | 返回 `text/markdown`；没生成过则 404                                                                                                    |
+| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）            | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE；响应带 `progress`                                                  |
+| GET    | `/api/v1/incidents/[id]/analyze/status`            | 研判阶段进度（第 3 阶段） | `{running, progress}`；研判是同步 POST，这里读同进程的阶段表，供前端轮询                                                                |
+| POST   | `/api/v1/correlation/run`                          | 手动触发聚合              | body `{now?}`；返回 `{created, updated, reopened, converged, merged}`                                                                   |
+
+值班相关字段（第 3 阶段）：
+
+```jsonc
+{
+  "assignee": "陈昊", // 责任人；未接手为 null
+  "team": "网络组",
+  "claimedAt": "2026-11-20T15:14:05.184Z",
+  "response": {
+    "state": "DUE_SOON", // UNASSIGNED | WITHIN | DUE_SOON | BREACHED | SETTLED
+    "slaMinutes": 10, // 创建时的策略快照，不随策略变更追溯
+    "remainingSeconds": 121, // 负数 = 已超时秒数
+    "claimSeconds": null, // 接手耗时（MTTA）；未接手为 null
+    "dueAt": "2026-11-20T15:10:00.000Z",
+  },
+  "phase": "AWAITING_CONFIRM", // 派生阶段：UNASSIGNED|INVESTIGATING|AWAITING_CONFIRM|LOCATED|MITIGATED|RESOLVED|ARCHIVED
+  "services": [
+    // 受影响业务 = 事件设备 ∩ 服务依赖设备
+    {
+      "code": "PAY",
+      "name": "支付网关",
+      "tier": 1,
+      "owner": "李锐",
+      "hitDevices": ["CORE-SW-01", "AGG-SW-03"],
+      "roles": ["GATEWAY", "TRANSIT"],
+    },
+  ],
+}
+```
+
+`phase` 由 `status + assignee + 有无结论 + 有无采纳` 现算，不落库：状态机已经够用，再加一层持久化状态只会让"以谁为准"变成长期争论。
+
+研判进度（`progress`）的形状：
+
+```jsonc
+{
+  "status": "DONE", // RUNNING | DONE | FAILED
+  "stage": "DONE",
+  "startedAt": "...",
+  "durationMs": 73,
+  "stages": [
+    { "stage": "CONTEXT", "label": "装配上下文", "durationMs": 43 },
+    { "stage": "REASONING", "label": "模型推理", "durationMs": 2 },
+    { "stage": "VERIFY", "label": "证据校验", "durationMs": 2 },
+    { "stage": "PERSIST", "label": "落库", "durationMs": 26 },
+  ],
+}
+```
 
 事件详情的 `topology` 字段（评审 P0-4）：
 
@@ -177,17 +231,20 @@
 
 写入时机（由 `audited()` 包装路由，成功记 `OK`、失败记 `FAIL` 后原样抛错）：
 
-| action                | 触发端点                                        |
-| --------------------- | ----------------------------------------------- |
-| `analyze.run`         | `POST /api/v1/incidents/[id]/analyze`           |
-| `hypothesis.verdict`  | `PATCH /api/v1/incidents/[id]/hypotheses/[hid]` |
-| `incident.transition` | `PATCH /api/v1/incidents/[id]`                  |
-| `alert.ingest`        | `POST /api/v1/ingest/alerts`                    |
-| `scenario.inject`     | `POST /api/v1/ingest/simulate`                  |
-| `correlation.run`     | `POST /api/v1/correlation/run`                  |
-| `report.generate`     | `POST /api/v1/incidents/[id]/report`            |
-| `case.verify`         | `PATCH /api/v1/cases/[id]`                      |
-| `incident.split`      | `POST /api/v1/incidents/[id]/split`             |
+| action                | 触发端点                                              |
+| --------------------- | ----------------------------------------------------- |
+| `analyze.run`         | `POST /api/v1/incidents/[id]/analyze`                 |
+| `hypothesis.verdict`  | `PATCH /api/v1/incidents/[id]/hypotheses/[hid]`       |
+| `incident.transition` | `PATCH /api/v1/incidents/[id]`                        |
+| `alert.ingest`        | `POST /api/v1/ingest/alerts`                          |
+| `scenario.inject`     | `POST /api/v1/ingest/simulate`                        |
+| `correlation.run`     | `POST /api/v1/correlation/run`                        |
+| `report.generate`     | `POST /api/v1/incidents/[id]/report`                  |
+| `case.verify`         | `PATCH /api/v1/cases/[id]`                            |
+| `incident.split`      | `POST /api/v1/incidents/[id]/split`                   |
+| `incident.claim`      | `POST /api/v1/incidents/[id]/claim`                   |
+| `incident.release`    | `DELETE /api/v1/incidents/[id]/claim`                 |
+| `hypothesis.verify`   | `POST /api/v1/incidents/[id]/hypotheses/[hid]/verify` |
 
 `actor` 记 `local` 或 `api-key:…<尾4位>`；**不记请求体**，`detail` 只含路由显式声明的小字段。
 审计写入失败只降级成一条 warn 日志，不影响业务结果 —— 宁可少一条记录，不能因为审计挂了就让结案失败。

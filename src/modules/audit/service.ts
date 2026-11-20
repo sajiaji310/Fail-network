@@ -32,6 +32,9 @@ export const AUDIT_ACTIONS = [
   'report.generate',
   'case.verify',
   'incident.split',
+  'incident.claim',
+  'incident.release',
+  'hypothesis.verify',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

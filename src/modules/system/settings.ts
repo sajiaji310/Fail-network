@@ -242,6 +242,9 @@ const ACTION_LABEL: Record<string, string> = {
   'report.generate': '生成报告',
   'case.verify': '案例确认',
   'incident.split': '事件拆分',
+  'incident.claim': '接手事件',
+  'incident.release': '释放事件',
+  'hypothesis.verify': '验证步骤',
 };
 
 export function auditActionLabel(action: string): string {

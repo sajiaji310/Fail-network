@@ -71,6 +71,7 @@ model Device {
   changes      ChangeRecord[]
   linksFrom    TopologyLink[]     @relation("src")
   linksTo      TopologyLink[]     @relation("dst")
+  services     ServiceDevice[]
 
   @@index([type, site])
 }
@@ -165,6 +166,16 @@ model Incident {
   reopenedFromId String? // B6 重开自哪个事件
   /// 人工拆分来源：拆分出的新事件指回原事件，聚合合并时跳过这对组合
   splitFromId    String?
+  /// 责任人（评审第 3 阶段）：接手人、团队、接手时间。
+  /// 三者由「接手」动作一次性写入，不是三处独立可编辑字段 —— 分开改会出现
+  /// "有负责人但没有接手时间"的状态，无法判定响应时限是否超时。
+  assignee       String?
+  team           String?
+  claimedAt      DateTime?
+  /// 响应时限（分钟）：事件创建时按当时的严重级策略写入。
+  /// 存下来而不是每次按 severity 现算，是为了保留"当时的目标" —— 策略收紧之后
+  /// 历史事件的超时判定不该被追溯改变。为空时退回 SLA_TARGET_MINUTES[severity]。
+  slaMinutes     Int?
   reopenedCount  Int            @default(0)
   closedReason   String? // MANUAL | AUTO_MERGED | AUTO_NOISE | AUTO_CLOSED
   /// 研判审计：{ analyzedAt, source, model, missingInfo, verify:{dropped,stats} }
@@ -183,29 +194,85 @@ model Incident {
 
   @@index([status, startedAt])
   @@index([severity])
+  /// 概览页「未接手」队列与超时判定都按这两列过滤
+  @@index([assignee, status])
+  @@index([claimedAt])
 }
 
 model Hypothesis {
-  id          String    @id @default(cuid())
-  incidentId  String
-  rank        Int
-  cause       String
-  category    String // HARDWARE / CONFIG / LINK / CAPACITY / UPSTREAM / OTHER
-  confidence  Float
-  evidence    Json // [{type:'ALERT'|'CHANGE'|'TOPOLOGY'|'CASE', ref:string, desc:string}]
-  verifySteps Json // string[]
-  actions     Json // [{action, risk:'LOW'|'MEDIUM'|'HIGH', requiresApproval:boolean}]
-  source      String // LLM | RULE_FALLBACK
-  model       String?
-  tokensUsed  Int?
+  id           String             @id @default(cuid())
+  incidentId   String
+  rank         Int
+  cause        String
+  category     String // HARDWARE / CONFIG / LINK / CAPACITY / UPSTREAM / OTHER
+  confidence   Float
+  evidence     Json // [{type:'ALERT'|'CHANGE'|'TOPOLOGY'|'CASE', ref:string, desc:string}]
+  verifySteps  Json // string[]
+  actions      Json // [{action, risk:'LOW'|'MEDIUM'|'HIGH', requiresApproval:boolean}]
+  source       String // LLM | RULE_FALLBACK
+  model        String?
+  tokensUsed   Int?
   /// 人工裁决（T08）：ACCEPTED / REJECTED，null = 未裁决。重新研判会整体替换假设，裁决随之清空
-  verdict     String?
-  verdictAt   DateTime?
-  verdictNote String?
-  createdAt   DateTime  @default(now())
-  incident    Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  verdict      String?
+  verdictAt    DateTime?
+  verdictNote  String?
+  createdAt    DateTime           @default(now())
+  incident     Incident           @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  verifyChecks HypothesisVerify[]
 
   @@index([incidentId, rank])
+}
+
+/// 验证步骤勾选（评审第 3 阶段「验证步骤变成可勾选清单，保存验证结果和操作者」）。
+///
+/// 只存"已勾上"的行：取消勾选就是删行，所以「已验 M 步」= count，
+/// 不需要在 JSON 里维护一个布尔数组，也不必担心步骤文案改了之后下标对不上 ——
+/// 下标只对当前这一版假设有意义，假设重研判时整批级联删除（onDelete: Cascade）。
+model HypothesisVerify {
+  id           String     @id @default(cuid())
+  hypothesisId String
+  /// 对应 verifySteps 数组下标，从 0 开始
+  stepIndex    Int
+  /// 勾选时记录的步骤文案快照：假设文本变了也能看出当时验的是什么
+  stepText     String
+  note         String?
+  by           String?
+  at           DateTime   @default(now())
+  hypothesis   Hypothesis @relation(fields: [hypothesisId], references: [id], onDelete: Cascade)
+
+  @@unique([hypothesisId, stepIndex])
+  @@index([hypothesisId, at])
+}
+
+/// 业务服务（评审第 3 阶段「影响面加入业务服务维度」）。
+///
+/// 有意不做成 CMDB：这里只回答"这次故障波及哪几个业务"，因此只需要
+/// 服务身份 + 关键级别 + 它依赖哪些设备。真正的配置项关系留给外接 CMDB。
+model Service {
+  id        String          @id @default(cuid())
+  code      String          @unique // PORTAL / PAY / DNS / VPN
+  name      String
+  /// 1 关键 / 2 重要 / 3 一般：决定影响面排序，也决定值班时先看谁
+  tier      Int             @default(2)
+  owner     String? // 业务负责人，与事件 assignee 是两回事
+  note      String?
+  createdAt DateTime        @default(now())
+  devices   ServiceDevice[]
+
+  @@index([tier])
+}
+
+/// 服务依赖的设备。一个服务通常跨核心/汇聚/接入多层，因此是多对多。
+model ServiceDevice {
+  serviceId String
+  deviceId  String
+  /// 依赖角色：GATEWAY 网关 / TRANSIT 承载 / UPLINK 出口 / HOST 宿主机
+  role      String?
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  device    Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, deviceId])
+  @@index([deviceId])
 }
 
 model CaseRecord {

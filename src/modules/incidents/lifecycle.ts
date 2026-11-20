@@ -151,6 +151,14 @@ export async function transitionIncident(input: TransitionInput): Promise<Transi
     }
 
     const acceptedView = detail.hypotheses.find((h) => h.verdict === 'ACCEPTED') ?? null;
+
+    // 评审第 3 阶段：结案前提示未完成验证项。不阻断 —— 人可能已经用别的方式
+    // 确认过了，系统没有资格拦着不让结案；但如果一条都没验，这事必须说出来。
+    const pendingSteps = acceptedView ? acceptedView.verify.total - acceptedView.verify.done : 0;
+    if (pendingSteps > 0) {
+      result.warnings.push(`采纳的根因还有 ${pendingSteps} 个验证步骤未勾选，报告里会照实记录`);
+    }
+
     try {
       result.caseId = await upsertCase(detail.id, buildCaseDraft(detail, acceptedView));
     } catch (error) {

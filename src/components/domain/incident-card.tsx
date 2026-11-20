@@ -3,6 +3,7 @@ import type { Severity } from '@prisma/client';
 import { IncidentStatusPill, SeverityPill } from '@/components/ui/badges';
 import { absTime, duration, relTime } from '@/lib/utils/time';
 import type { IncidentListItem } from '@/modules/incidents/service';
+import { PHASE_LABEL } from '@/modules/incidents/sla';
 import { cn } from '@/lib/utils/cn';
 
 /** 事件列表卡片（文档 11.1 `/incidents`：卡片列表 + 严重度色条） */
@@ -83,6 +84,39 @@ export function IncidentCard({ incident }: { incident: IncidentListItem }) {
           {rest > 0 ? ` 等 ${incident.deviceNames.length} 台` : ''}
         </p>
       ) : null}
+
+      {/* 值班视角：谁在管、到哪一步了、波及哪几个业务 —— 这三件事比设备名更该先看到 */}
+      <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/70 pt-1.5 text-[11px]">
+        <span className={incident.assignee ? 'text-text-secondary' : 'text-warn'}>
+          {incident.assignee
+            ? `${incident.assignee}${incident.team ? ` · ${incident.team}` : ''}`
+            : '无人接手'}
+        </span>
+        {incident.assignee ? (
+          <>
+            <Dot />
+            <span className="text-text-tertiary">{PHASE_LABEL[incident.phase]}</span>
+          </>
+        ) : null}
+        {incident.response.state === 'BREACHED' ? (
+          <span className="text-danger">已超响应时限</span>
+        ) : incident.response.state === 'DUE_SOON' ? (
+          <span className="text-warn">即将超时</span>
+        ) : null}
+        {incident.services.total > 0 ? (
+          <span
+            className="ml-auto text-text-tertiary"
+            title={
+              incident.services.critical.length > 0 ? incident.services.critical.join('、') : ''
+            }
+          >
+            业务 {incident.services.total}
+            {incident.services.critical.length > 0 ? (
+              <span className="ml-1 text-danger">{incident.services.critical[0]}</span>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
 
       <span className="sr-only">开始于 {absTime(incident.startedAt)}</span>
     </Link>

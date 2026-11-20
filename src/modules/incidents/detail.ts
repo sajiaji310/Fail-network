@@ -1,5 +1,6 @@
 import type { AlertStatus, IncidentStatus, Severity } from '@prisma/client';
 import { db } from '@/lib/db';
+import { getAffectedServices, type AffectedService } from '@/modules/business/impact';
 import { parseAnalysisMeta, type AnalysisMeta } from '@/modules/rca/schema';
 import {
   parseClosure,
@@ -14,11 +15,13 @@ import {
 } from '@/modules/topology/completeness';
 import { aggregateIncidentDevices, type IncidentDevice } from './devices';
 import { toHypothesisView, type HypothesisView } from './hypothesis-view';
+import { assessResponse, derivePhase, type IncidentPhase, type ResponseInfo } from './sla';
 import { buildTimeline, type TimelineItem } from './timeline';
 
 export type { ClosureRecord, StatusLogEntry } from './closure-view';
 export type { HypothesisView } from './hypothesis-view';
 export type { IncidentDevice } from './devices';
+export type { AffectedService } from '@/modules/business/impact';
 
 /**
  * 事件详情取数（文档 11 节第 13 条：含 alerts / hypotheses / timeline）。
@@ -85,6 +88,16 @@ export type IncidentDetail = {
   /** 拓扑完整度（评审 P0-4）：缺拓扑时页面把结论降级为候选排序 */
   topology: TopologyCoverage;
   topologyNote: string | null;
+  /** 责任人（评审第 3 阶段）：未接手为 null */
+  assignee: string | null;
+  team: string | null;
+  claimedAt: string | null;
+  /** 响应时限判定：未接手 / 在时限内 / 即将超时 / 已超时 / 已结束 */
+  response: ResponseInfo;
+  /** 当前阶段（由状态 + 责任人 + 结论派生，不落库） */
+  phase: IncidentPhase;
+  /** 受影响的业务服务（事件设备 ∩ 服务依赖设备） */
+  services: AffectedService[];
   stats: {
     alertCount: number;
     suppressedCount: number;
@@ -118,6 +131,10 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
       closedReason: true,
       reopenedCount: true,
       mergedIntoId: true,
+      assignee: true,
+      team: true,
+      claimedAt: true,
+      slaMinutes: true,
       analysisMeta: true,
       statusLog: true,
       closure: true,
@@ -159,6 +176,10 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
           verdict: true,
           verdictAt: true,
           verdictNote: true,
+          verifyChecks: {
+            orderBy: { stepIndex: 'asc' },
+            select: { stepIndex: true, note: true, by: true, at: true },
+          },
         },
       },
     },
@@ -193,7 +214,7 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
 
   // 拓扑取全量链路：连通性判定允许经过非事件设备（核心 → 汇聚常经中间设备），
   // 只查"紧邻事件设备"的链路会把正常拓扑误判成断裂。
-  const [changes, linkRows] = await Promise.all([
+  const [changes, linkRows, services] = await Promise.all([
     devices.length
       ? db.changeRecord.findMany({
           where: {
@@ -218,6 +239,7 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
         })
       : Promise.resolve([]),
     db.topologyLink.findMany({ select: { sourceId: true, targetId: true } }),
+    getAffectedServices(devices.map((d) => d.id)),
   ]);
 
   const topology = assessTopology(
@@ -264,6 +286,21 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
   const durationSeconds =
     (incident.resolvedAt ?? new Date()).getTime() - incident.startedAt.getTime();
 
+  const response = assessResponse({
+    severity: incident.severity,
+    status: incident.status,
+    startedAt: incident.startedAt,
+    claimedAt: incident.claimedAt,
+    slaMinutes: incident.slaMinutes,
+  });
+
+  const phase = derivePhase({
+    status: incident.status,
+    assignee: incident.assignee,
+    hasAnalysis: incident.hypotheses.length > 0,
+    hasAccepted: incident.hypotheses.some((h) => h.verdict === 'ACCEPTED'),
+  });
+
   return {
     id: incident.id,
     code: incident.code,
@@ -292,6 +329,12 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
     timelineTruncated: timeline.truncated,
     topology,
     topologyNote: coverageNote(topology),
+    assignee: incident.assignee,
+    team: incident.team,
+    claimedAt: incident.claimedAt?.toISOString() ?? null,
+    response,
+    phase,
+    services,
     stats: {
       alertCount: alerts.length,
       suppressedCount: alerts.filter((a) => a.status === 'SUPPRESSED').length,

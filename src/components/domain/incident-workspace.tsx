@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { AlertTable } from './alert-table';
+import { ClaimPanel } from './claim-panel';
 import { HypothesisPanel } from './hypothesis-panel';
 import { IncidentActions } from './incident-actions';
 import { SplitButton } from './incident-split';
@@ -150,8 +151,16 @@ export function IncidentWorkspace({
           </div>
         </section>
 
-        {/* 右：处理动作 + 根因与证据 */}
+        {/* 右：接手 + 处理动作 + 根因与证据 */}
         <section className="min-h-0 space-y-3 overflow-auto rounded-xl border border-border bg-surface shadow-card px-3 py-3">
+          <ClaimPanel
+            incidentId={detail.id}
+            status={detail.status}
+            assignee={detail.assignee}
+            team={detail.team}
+            claimedAt={detail.claimedAt}
+            response={detail.response}
+          />
           <IncidentActions detail={detail} />
           <HypothesisPanel
             incidentId={detail.id}
@@ -161,6 +170,7 @@ export function IncidentWorkspace({
             impactScope={detail.impactScope}
             changes={detail.changes}
             devices={detail.devices}
+            services={detail.services}
             topology={detail.topology}
             topologyNote={detail.topologyNote}
             selectedDeviceId={selectedDeviceId}

@@ -8,6 +8,7 @@ import {
   refreshIncidentAggregate,
 } from '@/modules/correlation/persist';
 import { parseStatusLog } from './closure-view';
+import { slaMinutesOf } from './sla';
 
 /**
  * 事件拆分（评审第 2 阶段「事件拆分的人工操作入口」）。
@@ -122,6 +123,8 @@ export async function splitIncident(input: SplitInput): Promise<SplitResult | nu
         lastSeen,
         clusterKey,
         splitFromId: incident.id,
+        // 与自动聚合创建的事件保持同一口径：响应目标在创建时快照
+        slaMinutes: slaMinutesOf({ severity, slaMinutes: null }),
       },
       select: { id: true, code: true },
     });

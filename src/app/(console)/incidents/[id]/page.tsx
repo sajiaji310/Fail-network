@@ -3,8 +3,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { IncidentWorkspace } from '@/components/domain/incident-workspace';
 import { IncidentStatusPill, SeverityPill, TopologyPill } from '@/components/ui/badges';
+import { PhaseProgress } from '@/components/ui/phase-progress';
 import { absTime, duration, relTime } from '@/lib/utils/time';
 import { getIncidentDetail } from '@/modules/incidents/detail';
+import { RESPONSE_STATE_LABEL } from '@/modules/incidents/sla';
 import { getLatestReport } from '@/modules/report/service';
 import { getTopologyGraph } from '@/modules/topology/service';
 
@@ -60,11 +62,67 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
 
         <h1 className="mt-1.5 text-[19px] font-medium leading-7 tracking-tight">{detail.title}</h1>
 
+        <PhaseProgress phase={detail.phase} className="mt-2" />
+
         <dl className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-text-secondary">
+          <Meta
+            label="负责人"
+            value={
+              detail.assignee ? (
+                <span className="text-text">
+                  {detail.assignee}
+                  {detail.team ? (
+                    <span className="ml-1 text-text-tertiary">{detail.team}</span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text-warn">无人接手</span>
+              )
+            }
+          />
+          <Meta
+            label="响应"
+            value={
+              <span
+                className={
+                  detail.response.state === 'BREACHED'
+                    ? 'text-danger'
+                    : detail.response.state === 'DUE_SOON'
+                      ? 'text-warn'
+                      : ''
+                }
+              >
+                {RESPONSE_STATE_LABEL[detail.response.state]}
+                {detail.response.claimSeconds !== null
+                  ? `（${Math.max(1, Math.round(detail.response.claimSeconds / 60))} 分钟）`
+                  : `（时限 ${detail.response.slaMinutes} 分钟）`}
+              </span>
+            }
+          />
+          <Meta
+            label="业务"
+            value={
+              detail.services.length > 0 ? (
+                <span className="text-text" title={detail.services.map((s) => s.name).join('、')}>
+                  {detail.services.length} 个
+                  {detail.services.some((s) => s.tier === 1) ? (
+                    <span className="ml-1 text-danger">
+                      {detail.services
+                        .filter((s) => s.tier === 1)
+                        .map((s) => s.name)
+                        .join('、')}
+                    </span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text-text-tertiary">未命中已知服务</span>
+              )
+            }
+          />
           <Meta
             label="开始"
             value={<span suppressHydrationWarning>{absTime(detail.startedAt)}</span>}
-          />
+          />{' '}
           <Meta
             label={detail.resolvedAt ? 'MTTR' : '持续'}
             value={<span className="font-mono tabular">{duration(mttr)}</span>}

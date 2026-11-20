@@ -6,6 +6,8 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { absTime, relTime } from '@/lib/utils/time';
 import { deviceLayerLabel } from '@/modules/alerts/labels';
+import { SERVICE_TIER_LABEL, type AffectedService } from '@/modules/business/impact';
+import { STAGE_LABEL, STAGE_ORDER, type AnalysisProgress } from '@/modules/rca/progress';
 import type { AnalysisMeta } from '@/modules/rca/schema';
 import type { IncidentChange, IncidentDevice } from '@/modules/incidents/detail';
 import type { HypothesisView } from '@/modules/incidents/hypothesis-view';
@@ -29,6 +31,8 @@ export type HypothesisPanelProps = {
   impactScope: string | null;
   changes: readonly IncidentChange[];
   devices: readonly IncidentDevice[];
+  /** 受影响业务服务（评审第 3 阶段）：设备是"哪里坏了"，服务是"谁受影响" */
+  services: readonly AffectedService[];
   topology: TopologyCoverage;
   topologyNote: string | null;
   selectedDeviceId?: string | null;
@@ -43,6 +47,7 @@ export function HypothesisPanel({
   impactScope,
   changes,
   devices,
+  services,
   topology,
   topologyNote,
   selectedDeviceId = null,
@@ -53,25 +58,47 @@ export function HypothesisPanel({
   const [verdictPendingId, setVerdictPendingId] = useState<string | null>(null);
   const [confirmReanalyze, setConfirmReanalyze] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 研判阶段进度（评审第 3 阶段）：POST 未返回时轮询，返回后展示各阶段耗时 */
+  const [progress, setProgress] = useState<AnalysisProgress | null>(null);
 
   async function analyze(force: boolean) {
     setPending(true);
     setError(null);
+    setProgress(null);
+
+    // 研判是同步 POST，进度靠轮询同进程的阶段表；POST 一旦返回就停，
+    // 不用等最后一个 tick（否则"完成"会延迟 600ms 才显示）
+    const timer = setInterval(() => {
+      void fetch(`/api/v1/incidents/${encodeURIComponent(incidentId)}/analyze/status`, {
+        cache: 'no-store',
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((body: { progress?: AnalysisProgress | null } | null) => {
+          if (body?.progress) setProgress(body.progress);
+        })
+        .catch(() => {
+          // 轮询失败不影响研判本身，静默即可
+        });
+    }, 400);
+
     try {
       const res = await fetch(
         `/api/v1/incidents/${encodeURIComponent(incidentId)}/analyze${force ? '?force=1' : ''}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
       );
+      const body = (await res.json().catch(() => null)) as {
+        error?: { message?: string };
+        progress?: AnalysisProgress | null;
+      } | null;
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: { message?: string };
-        } | null;
         throw new Error(body?.error?.message ?? `研判失败（HTTP ${res.status}）`);
       }
+      if (body?.progress) setProgress(body.progress);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : '研判失败');
     } finally {
+      clearInterval(timer);
       setPending(false);
     }
   }
@@ -175,6 +202,8 @@ export function HypothesisPanel({
           </div>
         ) : null}
 
+        {progress ? <StageTimeline progress={progress} /> : null}
+
         {topologyNote ? (
           <p className="mb-2 rounded-[6px] border border-warn/25 bg-warn-soft px-2 py-1.5 text-[10.5px] leading-4 text-warn">
             {topologyNote}
@@ -222,6 +251,7 @@ export function HypothesisPanel({
               <HypothesisCard
                 key={hypothesis.id}
                 hypothesis={hypothesis}
+                incidentId={incidentId}
                 verdictPending={verdictPendingId === hypothesis.id}
                 onVerdict={(verdict) => setVerdict(hypothesis.id, verdict)}
               />
@@ -296,9 +326,47 @@ export function HypothesisPanel({
         <h2 className="mb-2 text-[13px] font-medium">
           影响面
           <span className="ml-1.5 font-mono text-[10px] font-normal text-text-tertiary">
-            {devices.length} 台设备
+            {services.length} 个业务 · {devices.length} 台设备
           </span>
         </h2>
+
+        {services.length > 0 ? (
+          <ul className="mb-2 space-y-1">
+            {services.map((service) => (
+              <li
+                key={service.id}
+                className="rounded-[8px] border border-border bg-surface px-2.5 py-1.5"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      'rounded-[3px] px-1 py-px text-[9.5px]',
+                      service.tier === 1
+                        ? 'bg-danger-soft text-danger'
+                        : 'bg-surface-muted text-text-secondary',
+                    )}
+                  >
+                    {SERVICE_TIER_LABEL[service.tier] ?? `T${service.tier}`}
+                  </span>
+                  <span className="text-[11.5px] font-medium text-text">{service.name}</span>
+                  <span className="ml-auto font-mono text-[9.5px] text-text-tertiary">
+                    {service.hitDevices.length} 台命中
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[10px] leading-4 text-text-tertiary">
+                  {service.hitDevices.join('、')}
+                  {service.owner ? ` · 业务负责人 ${service.owner}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mb-2 rounded-[8px] border border-dashed border-border px-2.5 py-2 text-[10px] leading-4 text-text-tertiary">
+            未命中任何已登记的业务服务。这不代表没有业务受影响 —— 只说明受影响的设备
+            还没被登记进服务依赖。
+          </p>
+        )}
+
         <ul className="space-y-1">
           {devices.map((device) => (
             <li key={device.id}>
@@ -324,6 +392,60 @@ export function HypothesisPanel({
           ))}
         </ul>
       </section>
+    </div>
+  );
+}
+
+/**
+ * 研判阶段进度（评审第 3 阶段「提供阶段进度，之后再升级为 SSE」）。
+ *
+ * 跑的时候看"现在到哪一步"，跑完看"每步花了多久" —— 后者才是能沉淀的东西：
+ * 模型慢还是校验慢，一眼能分出来，不用去翻日志。
+ */
+function StageTimeline({ progress }: { progress: AnalysisProgress }) {
+  const finished = new Map(
+    progress.stages.filter((s) => s.finishedAt !== null).map((s) => [s.stage, s.durationMs ?? 0]),
+  );
+  const running = progress.status === 'RUNNING';
+
+  return (
+    <div className="mb-2 rounded-[6px] bg-surface-muted px-2 py-1.5">
+      <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[9.5px]">
+        {STAGE_ORDER.map((stage, index) => {
+          const done = finished.has(stage);
+          const current = running && progress.stage === stage;
+          return (
+            <li key={stage} className="flex items-center gap-1">
+              {index > 0 ? <span className="text-text-tertiary">›</span> : null}
+              <span
+                className={cn(
+                  'inline-flex items-center gap-0.5',
+                  done ? 'text-ok' : current ? 'text-primary' : 'text-text-tertiary',
+                )}
+              >
+                {current ? <Loader2 size={8} className="animate-spin" /> : null}
+                {STAGE_LABEL[stage]}
+                {done ? (
+                  <span className="font-mono text-[9px] text-text-tertiary">
+                    {finished.get(stage)}ms
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {progress.status === 'DONE' ? (
+        <p className="mt-1 font-mono text-[9px] text-text-tertiary">
+          总耗时 {progress.durationMs ?? 0}ms
+          {progress.stages.length > 0
+            ? ` · ${progress.stages.map((s) => `${s.label} ${s.durationMs ?? 0}ms`).join(' / ')}`
+            : ''}
+        </p>
+      ) : null}
+      {progress.status === 'FAILED' ? (
+        <p className="mt-1 text-[9.5px] text-danger">研判失败：{progress.error}</p>
+      ) : null}
     </div>
   );
 }

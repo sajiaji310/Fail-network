@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, CheckCircle2, GitBranch, ListChecks, Wrench, X } from 'lucide-react';
 import type { HypothesisView } from '@/modules/incidents/hypothesis-view';
+import { VerifyChecklist } from './verify-checklist';
 
 /**
  * 单条根因假设卡片。
@@ -38,10 +39,13 @@ function shortRef(ref: string): string {
 
 export function HypothesisCard({
   hypothesis,
+  incidentId,
   verdictPending = false,
   onVerdict,
 }: {
   hypothesis: HypothesisView;
+  /** 传入后可勾选验证步骤；不传则只读展示（报告、案例等只读场景） */
+  incidentId?: string;
   verdictPending?: boolean;
   onVerdict?: (verdict: 'ACCEPTED' | 'REJECTED' | null) => void;
 }) {
@@ -49,6 +53,23 @@ export function HypothesisCard({
   const isRule = hypothesis.source === 'RULE_FALLBACK';
   const accepted = hypothesis.verdict === 'ACCEPTED';
   const rejected = hypothesis.verdict === 'REJECTED';
+
+  /**
+   * "为什么排在这里"（评审 5.2）：排序分不看数字看信号组成。
+   * 只列真的出现在证据里的那几类，不写"综合评估"这种说了等于没说的话。
+   */
+  const signalCount = (type: string) =>
+    hypothesis.evidence.filter((item) => item.type === type).length;
+  const signals = [
+    ['CHANGE', '变更关联'],
+    ['TOPOLOGY', '拓扑证据'],
+    ['CASE', '历史案例'],
+  ]
+    .map(([type, label]) => ({ label: label!, count: signalCount(type!) }))
+    .filter((s) => s.count > 0);
+  const rankReason = `排第 ${hypothesis.rank} 位：关联告警 ${signalCount('ALERT')} 条${
+    signals.length > 0 ? ` · ${signals.map((s) => `${s.label} ${s.count}`).join(' · ')}` : ''
+  }`;
 
   return (
     <li
@@ -100,6 +121,13 @@ export function HypothesisCard({
         <span>证据 {hypothesis.evidenceCount} 条</span>
       </div>
 
+      <p
+        className="mt-1 text-[9.5px] leading-4 text-text-tertiary"
+        title="排序依据：证据数量与类型"
+      >
+        {rankReason}
+      </p>
+
       {hypothesis.evidence.length > 0 ? (
         <ul className="mt-2 space-y-1 border-t border-border pt-2">
           {hypothesis.evidence.map((item) => (
@@ -119,20 +147,28 @@ export function HypothesisCard({
       ) : null}
 
       {hypothesis.verifySteps.length > 0 ? (
-        <div className="mt-2 border-t border-border pt-2">
-          <p className="flex items-center gap-1 text-[10px] font-medium text-text-secondary">
-            <ListChecks size={11} strokeWidth={2} className="text-text-tertiary" />
-            验证步骤
-          </p>
-          <ol className="mt-1 space-y-0.5">
-            {hypothesis.verifySteps.map((step, index) => (
-              <li key={step} className="flex gap-1.5 text-[10.5px] leading-4 text-text-secondary">
-                <span className="font-mono text-[9px] text-text-tertiary">{index + 1}.</span>
-                <span className="min-w-0 break-words">{step}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        incidentId ? (
+          <VerifyChecklist
+            incidentId={incidentId}
+            hypothesisId={hypothesis.id}
+            verify={hypothesis.verify}
+          />
+        ) : (
+          <div className="mt-2 border-t border-border pt-2">
+            <p className="flex items-center gap-1 text-[10px] font-medium text-text-secondary">
+              <ListChecks size={11} strokeWidth={2} className="text-text-tertiary" />
+              验证步骤
+            </p>
+            <ol className="mt-1 space-y-0.5">
+              {hypothesis.verifySteps.map((step, index) => (
+                <li key={step} className="flex gap-1.5 text-[10.5px] leading-4 text-text-secondary">
+                  <span className="font-mono text-[9px] text-text-tertiary">{index + 1}.</span>
+                  <span className="min-w-0 break-words">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )
       ) : null}
 
       {hypothesis.actions.length > 0 ? (

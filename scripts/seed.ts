@@ -5,7 +5,8 @@
  */
 import { loadEnvFile } from 'node:process';
 import { PrismaClient } from '@prisma/client';
-import { ACC_NAMES, AGG_NAMES, CASES, DEVICES } from './seed-data';
+import { SLA_TARGET_MINUTES } from '../src/modules/incidents/sla';
+import { ACC_NAMES, AGG_NAMES, CASES, DEVICES, ONCALL, SERVICES } from './seed-data';
 
 try {
   loadEnvFile('.env');
@@ -87,6 +88,29 @@ async function seedLinks() {
   }
 }
 
+async function seedServices() {
+  const rows = await db.device.findMany({ select: { id: true, name: true } });
+  const idByName = new Map(rows.map((r) => [r.name, r.id]));
+
+  for (const s of SERVICES) {
+    const service = await db.service.upsert({
+      where: { code: s.code },
+      create: { code: s.code, name: s.name, tier: s.tier, owner: s.owner, note: s.note },
+      update: { name: s.name, tier: s.tier, owner: s.owner, note: s.note },
+    });
+
+    for (const dep of s.devices) {
+      const deviceId = idByName.get(dep.name);
+      if (!deviceId) throw new Error(`服务 ${s.code} 依赖的设备不存在：${dep.name}`);
+      await db.serviceDevice.upsert({
+        where: { serviceId_deviceId: { serviceId: service.id, deviceId } },
+        create: { serviceId: service.id, deviceId, role: dep.role },
+        update: { role: dep.role },
+      });
+    }
+  }
+}
+
 async function seedCases() {
   const seqByDay = new Map<string, number>();
 
@@ -95,6 +119,10 @@ async function seedCases() {
     const code = codeFor(startedAtMs, seqByDay);
     const locatedAt = new Date(startedAtMs + c.locateMin * 60_000);
     const resolvedAt = new Date(startedAtMs + c.resolveMin * 60_000);
+    // 历史事件一律有归属：否则「未接手」队列里塞满三个月前的陈账，
+    // 演示时看不出"当前有没有人管"这件事
+    const oncall = ONCALL[index % ONCALL.length]!;
+    const claimedAt = new Date(startedAtMs + (2 + (index % 9)) * 60_000);
 
     const incident = await db.incident.upsert({
       where: { code },
@@ -111,6 +139,10 @@ async function seedCases() {
         resolvedAt,
         mttrSeconds: c.resolveMin * 60,
         closedReason: 'MANUAL',
+        assignee: oncall.assignee,
+        team: oncall.team,
+        claimedAt,
+        slaMinutes: SLA_TARGET_MINUTES[c.severity],
       },
       update: {
         title: c.title,
@@ -122,6 +154,10 @@ async function seedCases() {
         resolvedAt,
         mttrSeconds: c.resolveMin * 60,
         status: 'CLOSED',
+        assignee: oncall.assignee,
+        team: oncall.team,
+        claimedAt,
+        slaMinutes: SLA_TARGET_MINUTES[c.severity],
       },
     });
 
@@ -160,23 +196,27 @@ async function main() {
   console.log('[seed] 开始…');
   await seedDevices();
   await seedLinks();
+  await seedServices();
   await seedCases();
 
-  const [devices, links, incidents, cases, byLayer] = await Promise.all([
+  const [devices, links, incidents, cases, services, byLayer] = await Promise.all([
     db.device.count(),
     db.topologyLink.count(),
     db.incident.count(),
     db.caseRecord.count(),
+    db.service.count(),
     db.device.groupBy({ by: ['layer'], _count: { _all: true }, orderBy: { layer: 'asc' } }),
   ]);
 
-  console.log(`[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases}`);
+  console.log(
+    `[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases} · 服务 ${services}`,
+  );
   console.log(
     `[seed] 层级分布 ${byLayer.map((g) => `L${g.layer}:${g._count._all}`).join(' / ')}（期望 L1:1 / L2:4 / L3:25）`,
   );
-  console.log('[seed] 期望基线 30 / 60 / 30 / 30');
+  console.log('[seed] 期望基线 30 / 60 / 30 / 30 / 6');
 
-  const ok = devices === 30 && links === 60 && cases === 30;
+  const ok = devices === 30 && links === 60 && cases === 30 && services === SERVICES.length;
   if (!ok) {
     console.error('[seed] 数量与基线不一致，检查 upsert 唯一键');
     process.exitCode = 1;

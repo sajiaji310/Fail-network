@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Check, KeyRound, X } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
 import { ScenarioInject } from '@/components/domain/scenario-inject';
+import { DataBaselineCard, EvalBaselineCard } from '@/components/domain/system-status-cards';
 import { absTime } from '@/lib/utils/time';
 import { getIncidentStats } from '@/modules/incidents/service';
 import {
@@ -14,6 +15,18 @@ import {
 } from '@/modules/system/settings';
 
 export const dynamic = 'force-dynamic';
+
+/** 交付卡片（评审 5.1：从概览页搬到设置页）—— 只在验收时需要，值班时是噪音 */
+const DELIVERY = [
+  ['T02', '数据模型与种子', '已完成'],
+  ['T03', '告警接入 + 模拟器', '已完成'],
+  ['T04', '归一化 + 抑制 + 生命周期', '已完成'],
+  ['T05', '关联聚合', '已完成'],
+  ['T06', '事件详情（只读拓扑）', '已完成'],
+  ['T07', '根因研判', '已完成'],
+  ['T08', '人工确认 + 简版报告', '已完成'],
+  ['T09', '评测与发布', '已完成'],
+] as const;
 
 /**
  * 设置（文档 11.1 `/settings`）。
@@ -266,12 +279,44 @@ export default async function SettingsPage() {
       </Card>
 
       <div className="mt-4 rounded-xl border border-border bg-surface px-5 py-4 text-[11.5px] leading-relaxed text-text-tertiary shadow-card">
-        <p>NetScope v0.1.0 · MVP-0 · 单人 + Agent 协作基线 · 阶段 T09（评测与发布）</p>
+        <p>NetScope v0.1.0 · MVP-0 · 单人 + Agent 协作基线 · 阶段「第 3 阶段：提升值班效率」</p>
         <p className="mt-1">
           接口清单见 <code className="font-mono">docs/API.md</code>，已实现范围与已知偏差见{' '}
           <code className="font-mono">docs/STATE.md</code>，评分与失败场景见{' '}
           <code className="font-mono">README.md</code> 评测段。
         </p>
+      </div>
+
+      {/* —— 系统状态（原概览页的验收材料，评审 5.1 搬迁至此） —— */}
+      <div className="mt-6 mb-2 flex items-baseline gap-2">
+        <h2 className="text-[15px] font-medium tracking-tight">系统状态</h2>
+        <span className="text-[11.5px] text-text-tertiary">
+          数据基线 · 评测基线 · 交付进度；值班时不看这些，验收时在这里
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        <DataBaselineCard />
+        <EvalBaselineCard />
+
+        <Card>
+          <CardTitle
+            hint={`${DELIVERY.filter(([, , state]) => state === '已完成').length}/${DELIVERY.length} 已完成`}
+          >
+            交付进度
+          </CardTitle>
+          <ul className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
+            {DELIVERY.map(([id, name, state]) => (
+              <li key={id} className="flex items-baseline gap-2 text-[12px]">
+                <span className="w-8 shrink-0 font-mono text-[10.5px] text-text-tertiary">
+                  {id}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-text-secondary">{name}</span>
+                <span className="shrink-0 text-[10.5px] text-ok">{state}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
     </div>
   );

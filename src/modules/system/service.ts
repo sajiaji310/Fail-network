@@ -27,7 +27,7 @@ export function toPublicHealth(s: SystemStatus): PublicHealth {
   return { status: s.status, db: s.db, llm: s.llm };
 }
 
-const STAGE = 'T09 评测与发布';
+const STAGE = '第 3 阶段：提升值班效率';
 
 async function probeDb(): Promise<{ status: DbStatus; version?: string; error?: string }> {
   try {

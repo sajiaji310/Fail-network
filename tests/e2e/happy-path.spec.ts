@@ -69,11 +69,13 @@ async function openResolveDialog(page: Page) {
   throw new Error('点「结案」始终没有弹出二次确认');
 }
 
-test('概览 → 事件详情 → 研判 → 采纳 → 结案', async ({ page, request }) => {
+test('概览 → 事件详情 → 接手 → 研判 → 采纳 → 结案', async ({ page, request }) => {
   const incident = await seedIncident(request);
 
   await page.goto('/overview');
-  await expect(page.getByRole('heading', { name: '概览' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '值班看板' })).toBeVisible();
+  // 新注入的事件没人接手，应当出现在看板与"无人接手"队列里
+  await expect(page.getByText('无人接手', { exact: false }).first()).toBeVisible();
 
   await page.goto('/incidents');
   await expect(page.getByText(incident.code, { exact: false }).first()).toBeVisible();
@@ -82,6 +84,18 @@ test('概览 → 事件详情 → 研判 → 采纳 → 结案', async ({ page, 
     .first()
     .click();
   await expect(page).toHaveURL(new RegExp(`/incidents/${incident.id}`));
+
+  // 阶段进度：新事件停在「待接手」
+  await expect(page.getByRole('list', { name: '事件阶段' })).toBeVisible();
+
+  // 接手（走 API，界面只断言结果）：负责人与响应耗时出现在页头
+  const claimed = await request.post(`/api/v1/incidents/${incident.id}/claim`, {
+    data: { assignee: '陈昊', team: '网络组' },
+  });
+  expect(claimed.ok(), '接手接口失败').toBeTruthy();
+  await page.reload();
+  await expect(page.getByText('当前处理人')).toBeVisible();
+  await expect(page.getByText('陈昊').first()).toBeVisible();
 
   // 研判：先走 API 触发，避免依赖按钮位置；页面刷新后断言结论渲染
   const analyzed = await request.post(`/api/v1/incidents/${incident.id}/analyze`, {

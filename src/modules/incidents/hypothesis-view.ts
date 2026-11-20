@@ -17,6 +17,22 @@ export type ActionView = {
   requiresApproval: boolean;
 };
 
+/** 验证步骤的勾选状态（评审第 3 阶段）：清单本身来自 verifySteps，勾选来自 HypothesisVerify 表 */
+export type VerifyStepView = {
+  index: number;
+  text: string;
+  done: boolean;
+  note: string | null;
+  by: string | null;
+  at: string | null;
+};
+
+export type VerifyView = {
+  total: number;
+  done: number;
+  steps: VerifyStepView[];
+};
+
 export type HypothesisView = {
   id: string;
   rank: number;
@@ -30,6 +46,8 @@ export type HypothesisView = {
   actions: ActionView[];
   evidenceCount: number;
   verifyStepCount: number;
+  /** 验证进度：未勾选任何步骤时 done=0，steps 仍然齐全（页面要渲染复选框） */
+  verify: VerifyView;
   /** ACCEPTED / REJECTED / null（未裁决）—— T08 人工确认 */
   verdict: string | null;
   verdictAt: string | null;
@@ -50,6 +68,7 @@ type HypothesisRow = {
   verdict?: string | null;
   verdictAt?: Date | null;
   verdictNote?: string | null;
+  verifyChecks?: readonly { stepIndex: number; note: string | null; by: string | null; at: Date }[];
 };
 
 function asArray(value: unknown): unknown[] {
@@ -94,9 +113,31 @@ function toStringList(value: unknown): string[] {
   return asArray(value).flatMap((item) => (typeof item === 'string' ? [item] : []));
 }
 
+/** 步骤清单 + 勾选行 → 前端可直接渲染的验证进度（detail 与 verify API 共用，避免两处口径） */
+export function toVerifyView(
+  verifySteps: readonly string[],
+  checks: readonly { stepIndex: number; note: string | null; by: string | null; at: Date }[],
+): VerifyView {
+  const checkedIndex = new Map(checks.map((c) => [c.stepIndex, c]));
+  const steps: VerifyStepView[] = verifySteps.map((text, index) => {
+    const hit = checkedIndex.get(index);
+    return {
+      index,
+      text,
+      done: hit !== undefined,
+      note: hit?.note ?? null,
+      by: hit?.by ?? null,
+      at: hit?.at ? hit.at.toISOString() : null,
+    };
+  });
+  return { total: steps.length, done: steps.filter((s) => s.done).length, steps };
+}
+
 export function toHypothesisView(row: HypothesisRow): HypothesisView {
   const evidence = toEvidenceView(row.evidence);
   const verifySteps = toStringList(row.verifySteps);
+  const verify = toVerifyView(verifySteps, row.verifyChecks ?? []);
+
   return {
     id: row.id,
     rank: row.rank,
@@ -110,6 +151,7 @@ export function toHypothesisView(row: HypothesisRow): HypothesisView {
     actions: toActionView(row.actions),
     evidenceCount: evidence.length,
     verifyStepCount: verifySteps.length,
+    verify,
     verdict: row.verdict ?? null,
     verdictAt: row.verdictAt ? row.verdictAt.toISOString() : null,
     verdictNote: row.verdictNote ?? null,

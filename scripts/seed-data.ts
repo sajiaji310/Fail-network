@@ -46,6 +46,108 @@ export const DEVICES: DeviceSpec[] = [
 export const AGG_NAMES = ['AGG-SW-01', 'AGG-SW-02', 'AGG-SW-03', 'AGG-SW-04'] as const;
 export const ACC_NAMES = DEVICES.filter((d) => d.layer === 3).map((d) => d.name);
 
+/**
+ * 业务服务（评审第 3 阶段「影响面加入业务服务维度」）。
+ *
+ * 只声明"这个业务依赖哪些设备"，不声明拓扑 —— 影响面由
+ * 事件设备 ∩ 服务依赖设备 现算，所以设备换了、服务迁了都不用改代码。
+ * tier 1 的业务在概览页排在最前：核心报表挂了和打印服务挂了不是一回事。
+ */
+export type ServiceSpec = {
+  code: string;
+  name: string;
+  tier: 1 | 2 | 3;
+  owner: string;
+  note: string;
+  devices: { name: string; role: 'GATEWAY' | 'TRANSIT' | 'ACCESS' | 'UPLINK' }[];
+};
+
+export const SERVICES: ServiceSpec[] = [
+  {
+    code: 'PORTAL',
+    name: '门户网站',
+    tier: 1,
+    owner: '张鹤',
+    note: '对外首页与统一登录，入口流量全部经核心',
+    devices: [
+      { name: 'CORE-SW-01', role: 'GATEWAY' },
+      { name: 'AGG-SW-01', role: 'TRANSIT' },
+      { name: 'ACC-SW-01', role: 'ACCESS' },
+      { name: 'ACC-SW-02', role: 'ACCESS' },
+    ],
+  },
+  {
+    code: 'PAY',
+    name: '支付网关',
+    tier: 1,
+    owner: '李锐',
+    note: '交易链路，断 1 分钟即产生资损',
+    devices: [
+      { name: 'CORE-SW-01', role: 'GATEWAY' },
+      { name: 'AGG-SW-03', role: 'TRANSIT' },
+      { name: 'ACC-SW-11', role: 'ACCESS' },
+      { name: 'ACC-SW-12', role: 'ACCESS' },
+    ],
+  },
+  {
+    code: 'DNS',
+    name: '内网 DNS',
+    tier: 1,
+    owner: '周敏',
+    note: '递归解析，失效表现为"能 ping 通 IP 但打不开网页"',
+    devices: [
+      { name: 'CORE-SW-01', role: 'GATEWAY' },
+      { name: 'AGG-SW-02', role: 'TRANSIT' },
+      { name: 'ACC-SW-13', role: 'ACCESS' },
+    ],
+  },
+  {
+    code: 'VPN',
+    name: '远程接入 VPN',
+    tier: 2,
+    owner: '王涛',
+    note: '分支与居家办公接入，依赖出口链路',
+    devices: [
+      { name: 'CORE-SW-01', role: 'UPLINK' },
+      { name: 'AGG-SW-04', role: 'TRANSIT' },
+      { name: 'ACC-SW-24', role: 'ACCESS' },
+    ],
+  },
+  {
+    code: 'OA',
+    name: '协同办公',
+    tier: 2,
+    owner: '周敏',
+    note: '园区 A 区办公终端日常办公',
+    devices: [
+      { name: 'AGG-SW-01', role: 'TRANSIT' },
+      { name: 'ACC-SW-05', role: 'ACCESS' },
+      { name: 'ACC-SW-06', role: 'ACCESS' },
+      { name: 'ACC-SW-07', role: 'ACCESS' },
+    ],
+  },
+  {
+    code: 'VM',
+    name: '虚拟化平台',
+    tier: 2,
+    owner: '王涛',
+    note: '内部系统宿主机所在网段',
+    devices: [
+      { name: 'CORE-SW-01', role: 'GATEWAY' },
+      { name: 'AGG-SW-02', role: 'TRANSIT' },
+      { name: 'ACC-SW-09', role: 'ACCESS' },
+    ],
+  },
+];
+
+/** 值班表：历史事件按此轮转，让"负责人"字段在演示里有真实分布 */
+export const ONCALL = [
+  { assignee: '陈昊', team: '网络组' },
+  { assignee: '李锐', team: '网络组' },
+  { assignee: '周敏', team: '系统组' },
+  { assignee: '王涛', team: '系统组' },
+] as const;
+
 /** 30 条历史案例（对应 30 个已结案事件），覆盖 6 类根因 */
 export type CaseSpec = {
   title: string;

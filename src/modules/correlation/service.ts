@@ -1,6 +1,7 @@
 import { Prisma, type IncidentStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { clusterKeyOf } from '../alerts/fingerprint';
+import { slaMinutesOf } from '../incidents/sla';
 import { clusterAlerts, type AlertCluster, type ClusterAlert } from './cluster';
 import {
   ACTIVE_INCIDENT_STATUSES,
@@ -231,6 +232,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
       : clusterKeyOf(fingerprintIds);
 
     let code = await nextIncidentCode(firstSeen);
+    const severity = maxSeverity(cluster.alerts.map((a) => a.severity));
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const created = await db.incident.create({
@@ -238,11 +240,13 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
             code,
             title: buildIncidentTitle(cluster.alerts),
             status: 'OPEN',
-            severity: maxSeverity(cluster.alerts.map((a) => a.severity)),
+            severity,
             startedAt: firstSeen,
             lastSeen,
             clusterKey,
             reopenedFromId: reopenedFromId ?? null,
+            // 响应目标在这里快照：策略以后收紧，不该把历史事件追溯判成超时
+            slaMinutes: slaMinutesOf({ severity, slaMinutes: null }),
           },
           select: { id: true, code: true },
         });

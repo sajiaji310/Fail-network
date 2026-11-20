@@ -242,6 +242,45 @@
 
 **门禁**：format / lint / typecheck / **test 241 passed（30 files）** / build / **E2E 2 passed** 全绿。
 
+## 第 3 阶段收口：提升值班效率（提交待填）
+
+评审目标是"减少用户从看到事件到采取动作的时间"。五项全部落地。
+
+**1. 接手、负责人、团队与响应时限**（`modules/incidents/sla.ts` + `claim.ts` + `POST/DELETE /api/v1/incidents/[id]/claim`）
+
+- `Incident` 加 `assignee / team / claimedAt / slaMinutes`。三个字段由「接手」动作一次性写入，不做成三处独立可编辑字段 —— 分开改会出现"有负责人但没有接手时间"，响应时限就没法判。
+- 响应目标按严重级：P0 10 / P1 20 / P2 60 / P3 240 分钟。**创建时快照进 `slaMinutes`**，策略以后收紧不追溯把历史事件判成超时；旧数据没有快照时退回默认值。
+- 抢单返回 409 `ALREADY_CLAIMED` 并带上当前责任人，UI 二次确认后带 `force` 转派。**转派不重置 `claimedAt`** —— 否则换个值班人 MTTA 就洗成 0。
+- 释放（`DELETE`）把事件交回队列，但保留 `claimedAt`：响应已经发生过，抹掉等于把一次超时洗成"从没人管"。
+
+**2. 阶段进度**（`derivePhase`，纯派生不落库）
+
+待接手 → 分析中 → 待确认 → 已定位 → 缓解中 → 已恢复 → 已归档，由 `status + assignee + 有无结论 + 有无采纳` 现算。评审原文把「待确认」列在缓解中之后，这里按真实排障顺序放到已定位之前：人是先看候选结论、确认根因，再动手缓解。
+
+> 不落成新状态枚举的原因：状态机已经够用，再加一层持久化状态，"到底以谁为准"会变成长期的争论。
+
+**3. 概览页改为值班看板**
+
+首屏四指标（活跃 / 未接手 / 响应告急 / 待确认）+ 三个队列（无人接手 / 未研判 / 待确认，各自可点进 `?queue=` 细看）+ 活跃事件表（负责人、响应状态、业务影响、持续时长）。数据基线、评测基线、T02–T09 搬到 `/settings` 的「系统状态」段。
+
+**4. 验证步骤可勾选**（`HypothesisVerify` 表 + `POST .../hypotheses/[hid]/verify`）
+
+只存"已勾上的行"，取消勾选就是删行 —— 进度是一次 count，不用维护布尔数组；每步记 `by / at / note`，步骤文案在勾选时快照。`by` 由服务端从请求身份解析，不接受前端自称。结案时若采纳的根因还有未勾选的步骤，`warnings` 里照实提示（不阻断）。
+
+**5. 业务影响面**（`Service` / `ServiceDevice` + `modules/business/impact.ts`）
+
+受影响服务 = 事件设备 ∩ 服务依赖设备，现算不落库。种子给了 6 个服务（门户/支付/内网 DNS 为 tier 1）。详情页右栏与列表卡片都显示"波及哪几个业务"，而不只是"几台设备"。没命中时明确写"未命中任何已登记业务服务，这不代表没有业务受影响"。
+
+**6. 研判阶段进度**（`modules/rca/progress.ts` + `GET .../analyze/status`）
+
+`runAnalysis` 拆成 装配上下文 → 模型推理 → 证据校验 → 落库 四段，每段记耗时；前端点研判时轮询阶段表，结束后显示各阶段耗时（模型慢还是落库慢一眼看出）。为将来 SSE 留位：接口形状不变，换传输层即可。
+
+> 踩坑：进度表最初用模块级 `Map`，`analyze/route` 与 `analyze/status/route` 各自持有一份模块实例（Next 按路由分块），POST 写进去 GET 读不到。改为挂 `globalThis` 单例后正常。另：多实例部署时轮询可能打到别的进程，届时返回 `running:false`，前端退化成"等着"，不会卡死 —— 这一点写进了代码注释。
+
+**新增测试 30 条**：SLA 判定与阶段派生 12、接手/转派/释放 8、验证勾选 6、业务影响面 4。E2E 主路径补了"接手后负责人出现在页头"的断言。
+
+**门禁**：format / lint / typecheck / **test 271 passed（34 files）** / build / **E2E 2 passed** 全绿。
+
 ## 未完成 / 已知偏差
 
 - ~~B4（人工拆分）按文档推迟到 P2~~ → 已在第 2 阶段实现（`POST /api/v1/incidents/[id]/split`）
@@ -302,6 +341,17 @@
   `npm run build` + `npm run start` 起来且 `/api/health` 200
 - **历史归档事件在列表里显示「告警 0 · 设备 0」**：30 条种子历史事件没有关联 `Alert` 行
   （种子只造了案例文案，没造配套告警）。活跃事件计数正常，属数据侧欠账，不是聚合算错
+- **新增 3 张表**（文档 8 节模型没有）：`HypothesisVerify`（验证勾选）、`Service` / `ServiceDevice`（业务服务依赖）；
+  `Incident` 同时新增 `assignee / team / claimedAt / slaMinutes` 四个字段。理由同前几阶段的
+  `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这几列承载，回写文档待办
+- **接手没有身份校验**：`assignee` 是自由填写的名字，真正的身份只有 API Key 尾号（`actor`）。
+  MVP-0 没有用户表，做不了"只能接自己的单"；RBAC 与值班表在评审第 4 阶段
+- **响应时限只管"有没有人接手"，不管"多久修好"**：MTTR 目标（解决时限）需要按故障类型分档，
+  当前数据里没有"预计恢复时间"这类字段，硬编一个目标只会变成没人看的口号
+- **业务服务依赖是种子手工维护的**：`Service` / `ServiceDevice` 没有管理界面，也没接 CMDB；
+  影响面只回答"波及哪几个已登记业务"，未登记的设备命中服务时页面会明说"未命中"
+- **研判进度表是进程内单例**（`globalThis`）：单实例没问题；多实例部署时轮询可能打到别的进程，
+  前端会退化成"等着，看不到阶段"。升级 SSE 时顺手换 Redis，接口形状不变
 
 ## 已知行为（不是 bug，验收时别误会）
 
@@ -313,8 +363,9 @@
 
 ## 下一步
 
-1. 人工验收 T09（清单见下）——这是最后一张卡
-2. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes；P1 按评审顺序推进（第 3 阶段是值班效率：接手人 / 待处理队列 / 验证步骤勾选；第 4 阶段是真实数据接入与批处理导入）
+1. 人工验收第 3 阶段（值班效率）：`/overview` 看板 → 接手 → 勾选验证步骤 → 结案
+2. 第 4 阶段按评审顺序推进：真实数据接入（Prometheus/Zabbix/Syslog 至少一种）、导入改批处理并提供批次状态、指标快照、多租户与 RBAC
+3. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes
 
 ## T09 人工验收清单
 
@@ -339,13 +390,13 @@ npx playwright test
 NEXT_DIST_DIR=.next-serve npm run build
 NEXT_DIST_DIR=.next-serve PORT=3100 npm run start
 curl -s localhost:3100/api/health | jq '{status,stage,llm}'
-#   期望：status=ok, stage="T09 评测与发布"
+#   期望：status=ok, stage="第 3 阶段：提升值班效率"
 
-# 5) 截图重生成（注入剧本 → 研判 → 真实渲染截图）
+# 5) 截图重生成（注入剧本 → 研判 → 接手 → 真实渲染截图）
 APP_BASE_URL=http://127.0.0.1:3100 node scripts/screenshots.mjs
-ls docs/screenshots          # overview / incidents / incident-detail / topology / cases
+ls docs/screenshots          # overview(值班看板) / incidents / incident-detail / topology / cases / eval-baseline
 
-# 6) 门禁（191 passed）
+# 6) 门禁（271 passed）
 npm run lint && npm run typecheck && npm run test && npm run build
 
 # 7) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）

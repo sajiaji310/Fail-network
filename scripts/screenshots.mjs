@@ -65,10 +65,11 @@ const page = await context.newPage();
 try {
   console.log('→ 截图');
   await page.goto(`${BASE}/overview`, { waitUntil: 'domcontentloaded' });
-  await settle(page, '概览');
+  await settle(page, '值班看板');
   await shot(page, 'overview');
 
-  // 概览比一屏高，「评测基线」卡片会被裁在底边 —— 单独截这张卡，README 用它做分数证据
+  // 评测基线已搬到设置页底部（评审 5.1）：单独截这张卡，README 用它做分数证据
+  await page.goto(`${BASE}/settings`, { waitUntil: 'domcontentloaded' });
   const evalCard = page
     .getByRole('heading', { name: '评测基线' })
     .locator('xpath=ancestor::section[1]');
@@ -80,6 +81,11 @@ try {
   await page.goto(`${BASE}/incidents?status=all`, { waitUntil: 'domcontentloaded' });
   await settle(page, '事件');
   await shot(page, 'incidents');
+
+  // 概览要拍"还没人接手"的状态，详情要拍"已接手"的状态 ——
+  // 所以接手放在这两张之间，而不是脚本开头
+  console.log('→ 接手事件');
+  await post(`/api/v1/incidents/${sim.incidentId}/claim`, { assignee: '陈昊', team: '网络组' });
 
   await page.goto(`${BASE}/incidents/${sim.incidentId}`, { waitUntil: 'domcontentloaded' });
   await settle(page, '根因研判');

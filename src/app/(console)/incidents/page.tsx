@@ -4,7 +4,7 @@ import { IncidentCard } from '@/components/domain/incident-card';
 import { SimulateButton } from '@/components/domain/simulate-button';
 import { SegmentedTabs } from '@/components/ui/tabs';
 import { buttonClass } from '@/components/ui/button';
-import { getIncidentStats, listIncidents } from '@/modules/incidents/service';
+import { getIncidentStats, listIncidents, type IncidentQueue } from '@/modules/incidents/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,16 +27,34 @@ const TABS: Tab[] = [
 
 const DEFAULT_TAB = TABS[0] as Tab;
 
+/** 值班队列（从概览页"还有 N 个"跳进来）：与概览同一套 SQL 过滤口径 */
+const QUEUES: Record<IncidentQueue, { title: string; hint: string }> = {
+  UNASSIGNED: { title: '无人接手', hint: '还没有责任人，接手后才会出现在别人的"当前处理人"里' },
+  UNANALYZED: { title: '未研判', hint: '还没有根因候选，先跑一次研判再决定动作' },
+  AWAITING_CONFIRM: { title: '待确认', hint: '研判已有结论，等人采纳或否决' },
+};
+
+function parseQueue(value: string | undefined): IncidentQueue | null {
+  return value === 'UNASSIGNED' || value === 'UNANALYZED' || value === 'AWAITING_CONFIRM'
+    ? value
+    : null;
+}
+
 export default async function IncidentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; queue?: string }>;
 }) {
-  const { status: statusParam } = await searchParams;
+  const { status: statusParam, queue: queueParam } = await searchParams;
   const tab = TABS.find((t) => t.key === statusParam) ?? DEFAULT_TAB;
+  const queue = parseQueue(queueParam);
 
   const [list, stats] = await Promise.all([
-    listIncidents({ status: tab.status, severity: tab.severity, page: 1, pageSize: 40 }),
+    listIncidents(
+      queue
+        ? { queue, page: 1, pageSize: 40 }
+        : { status: tab.status, severity: tab.severity, page: 1, pageSize: 40 },
+    ),
     getIncidentStats(),
   ]);
 
@@ -52,9 +70,21 @@ export default async function IncidentsPage({
         <SimulateButton label="注入演示故障" variant="ghost" reset />
       </header>
 
+      {queue ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary-soft px-3 py-2 text-[12px]">
+          <span className="font-medium text-primary">
+            队列：{QUEUES[queue].title}（{list.total} 个）
+          </span>
+          <span className="text-text-secondary">{QUEUES[queue].hint}</span>
+          <Link href="/incidents" className="ml-auto text-[11px] text-primary hover:underline">
+            清除队列筛选
+          </Link>
+        </div>
+      ) : null}
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedTabs
-          activeKey={tab.key}
+          activeKey={queue ? '' : tab.key}
           items={TABS.map((t) => ({
             key: t.key,
             label: t.label,
@@ -64,7 +94,7 @@ export default async function IncidentsPage({
           }))}
         />
         <span className="text-[11px] text-text-tertiary">
-          卡片左条为严重度 · 点进详情看研判结论
+          卡片左条为严重度 · 底部为负责人与阶段
         </span>
       </div>
 
