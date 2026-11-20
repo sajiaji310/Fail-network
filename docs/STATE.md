@@ -487,7 +487,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 2. ~~用真实环境的一批告警回填~~ → 已完成（T16，1.2 万条 / 36.2s / 331 行每秒，见上）。
    真实环境回填时重点看两项：**「设备不存在」占比**（决定别名表还要补多少）与
    **聚合后的事件数**（历史告警不会成簇，只有近 30 分钟活跃的才成）
-3. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag）+ `docs/RELEASE-v0.1.0.md`。
+3. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag，指向 `ed2a8dd`）+ `docs/RELEASE-v0.1.0.md`。
    GitHub Topics / Release 还差一步 —— **仓库没有配置 remote**，需要先 `git remote add origin <url>` 再 push
    `main` 与 `v0.1.0`
 4. 若要让历史数据参与评测：给导入加「时间轴平移」参数（把 `firstSeen/lastSeen` 整体挪到当前窗口），

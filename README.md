@@ -245,9 +245,10 @@ Next.js 15 App Router（RSC）· TypeScript strict（`noUncheckedIndexedAccess`�
 | 文件                        | 作用                                                    |
 | --------------------------- | ------------------------------------------------------- |
 | `docs/PROJECT-FRAMEWORK.md` | 唯一事实源（架构 / 数据模型 / API / 任务卡 / 验收标准） |
-| `docs/AGENT-TASKS.md`       | T01–T14 任务卡与验收要点                                |
+| `docs/AGENT-TASKS.md`       | T01–T16 任务卡与验收要点                                |
 | `docs/STATE.md`             | 当前进度、偏差、阻塞                                    |
 | `docs/API.md`               | 接口契约                                                |
+| `docs/RELEASE-v0.1.0.md`    | 本次发布的说明、升级须知、已知限制                      |
 | `AGENTS.md`                 | Agent 行为契约                                          |
 
 ## License
