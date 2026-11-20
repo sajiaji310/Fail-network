@@ -1,11 +1,11 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-20 23:58
+> 最后更新：2026-11-21 00:40
 
 ## 当前任务
 
-**第 4 阶段（真实数据接入和规模化）— T10–T14 已实现，等待人工验收**
+**第 4 阶段（真实数据接入和规模化）— T10–T15 已实现，验收脚本就绪，等待人工验收**
 
 阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
 
@@ -337,6 +337,20 @@ L2 仍要求设备在影响面 ≤2 跳内。
 口径全部写在模块注释与页面上：接受率分母只算已裁决假设；误抑制 = 被压制的告警中父告警已恢复
 而它还在报的那部分（父告警恢复后压制理由就消失）；MTTR 用分位是因为均值会被长尾拉偏。
 
+**6. 验收脚本（T15）**
+
+`scripts/accept-phase4.ts`（`npm run accept:phase4`）把本文件末尾那一长串 curl 变成断言：
+逐项 `[PASS] / [FAIL] / [SKIP]` 并打印实测值，退出码非 0 即失败。三档：
+
+- 默认只读：健康检查、页头阶段徽标、`/sources` 与 `/metrics` 与 `/settings`（交付进度 15/15）页面、
+  批次列表、保留 dry-run、别名解析；
+- `--write`：Alertmanager（含 resolved 跳过与别名命中）+ Zabbix（含"设备不存在"提示）+ 指标采样
+  （写入 2 条 → 重推幂等 0 条 → 趋势首末/峰谷/斜率 → 批次 DONE 100%）；
+- `--clean`：按 `acceptance` 标记清掉写入的告警/批次/采样，审计日志保留（追加型证据链，删了等于改历史）。
+
+> 期望值写死是刻意的：`skipped=1`、`accepted=2`、重推后 `accepted=0`，这几个数一变就是链路变了，
+> 而不是"看起来还行"。人工只负责脚本判不了的三件事（真实回填、接受率可信度、误抑制是压太久还是压错）。
+
 **新增测试 45 条**：适配器 18、RBAC/Key 11、批处理 3、指标 7、保留策略 3、运行指标口径 3。
 总计 316 passed（41 文件）。
 
@@ -437,11 +451,11 @@ L2 仍要求设备在影响面 ≤2 跳内。
 
 ## 下一步
 
-1. 人工验收第 4 阶段（真实接入）：`/sources` 看推送地址与别名 → 推一条 Alertmanager/Zabbix payload →
-   `/ingest/batches` 看批次 → `/metrics` 看真实源计数与 MTTR/接受率
+1. 人工验收第 4 阶段：`npm run accept:phase4 -- --write`（15 项断言，本机首轮 PASS 15 / FAIL 0），
+   再人工看 `/sources` 的别名表与 `/metrics` 的四个数字是否符合预期；验完 `--clean` 清场
 2. 用真实环境的一批告警回填一次（建议 ≥ 1 万条），观察批次耗时、去重率与「设备不存在」占比；
    设备名对不上是接入期的主要成本，别名表要跟着补
-3. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes
+3. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes（仓库当前没有配置 remote）
 
 ## T09 人工验收清单
 
@@ -465,20 +479,20 @@ npx playwright test
 # 4) 生产启动冒烟（等价于容器里的 npm run start）
 NEXT_DIST_DIR=.next-serve npm run build
 NEXT_DIST_DIR=.next-serve PORT=3100 npm run start
-curl -s localhost:3100/api/health | jq '{status,stage,llm}'
-#   期望：status=ok, stage="第 4 阶段：真实数据接入和规模化"
+curl -s localhost:3100/api/health | jq '{status,db,llm}'
+#   期望：status=ok、db=up —— 阶段文案按 P0-2 脱敏没进 health，改看页面：
+curl -s localhost:3100/overview | grep -o '第 4 阶段[^<]*' | head -1
+#   期望：第 4 阶段：真实数据接入和规模化
 
-# 5) 真实数据源冒烟（第 4 阶段新增）
-curl -s -X POST localhost:3100/api/v1/ingest/alertmanager?source=demo \
-  -H 'content-type: application/json' \
-  -d '{"version":"4","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"LinkDown","instance":"CORE-SW-01:9100","severity":"critical"},"annotations":{"summary":"Gi0/1 link down"},"startsAt":"2026-11-20T10:00:00Z","fingerprint":"acc-1"}]}'
-#   期望：accepted ≥ 0、failed=0（instance 的 :9100 会自动剥掉）
-curl -s 'localhost:3100/api/v1/ingest/batches?limit=3' | jq '.items[0] | {kind,status,processed,total}'
-curl -s -X POST localhost:3100/api/v1/metrics/samples -H 'content-type: application/json' \
-  -d '{"samples":[{"deviceName":"CORE-SW-01","metric":"cpu.util","value":91.2,"unit":"%","at":"2026-11-20T10:00:00Z"}]}'
-curl -s 'localhost:3100/api/v1/metrics?deviceName=CORE-SW-01&metric=cpu.util&minutes=60' | jq '.trend'
-curl -s -X POST localhost:3100/api/v1/admin/retention -H 'content-type: application/json' -d '{"dryRun":true}' | jq '.deleted'
-#   期望：dry-run 返回各表可清理条数；不会真删
+# 5) 第 4 阶段验收（15 项断言，服务就是 4) 起在 3100 的那个）
+npm run accept:phase4 -- --base=http://127.0.0.1:3100 --write
+#   期望：结论 PASS 15 / FAIL 0 / SKIP 0
+#   覆盖：health / 页头阶段徽标 / sources+metrics+settings 页面 / 批次列表 / 保留 dry-run /
+#         Alertmanager（resolved 跳过 + 别名命中）/ Zabbix（设备不存在提示）/
+#         指标写入 2 条 + 重推幂等 0 条 + 趋势首末峰谷斜率 / 批次 DONE 100% / 别名解析
+npm run accept:phase4 -- --base=http://127.0.0.1:3100 --clean
+#   期望：告警 1 · 事件 0 · 批次 2 · 采样 2；审计日志保留
+#   若要看原始返回，等价单条 curl 见 /sources 页「推送地址」三张卡
 
 # 6) 截图重生成（注入剧本 → 研判 → 接手 → 采纳 → 真实渲染截图）
 APP_BASE_URL=http://127.0.0.1:3100 node scripts/screenshots.mjs
@@ -487,15 +501,16 @@ ls docs/screenshots   # overview / incidents / incident-detail / topology / case
 # 7) 门禁（316 passed）
 npm run lint && npm run typecheck && npm run test && npm run build
 
-# 7) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）
+# 8) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）
 docker compose up --build -d
-curl -s localhost:3000/api/health | jq '{status,db,stage}'
+curl -s localhost:3000/api/health | jq '{status,db,llm}'
 ```
 
 浏览器验收（重点）：
 
-1. `/overview` 顶部阶段显示「T09 评测与发布」，下方阶段清单 T01–T09 全为「已完成」
-2. README 里 5 张截图能正常打开，且与当前页面一致（概览 / 事件列表 / 事件详情 / 拓扑 / 案例库）
+1. 页头（Topbar）阶段徽标显示「第 4 阶段：真实数据接入和规模化」；任务清单在 `/settings` 的「交付进度」里，
+   T01–T15 全部「已完成」（15/15）—— 概览页是值班看板，验收材料按评审 5.1 已搬走
+2. README 里 8 张截图能正常打开，且与当前页面一致（概览 / 事件列表 / 事件详情 / 拓扑 / 案例库 / 评测基线 / 数据源 / 运行指标）
 3. `/incidents?status=all` 列表 31 条两列排列，活跃事件在第一条且计数正常（21 条告警 / 15 台设备）
 4. 结案流程回归：详情页「结案」→ 弹窗填备注 → 提交后出现 MTTR 与报告面板，报告可下载 .md
 5. `npm run eval -- --set=test` 的输出表格与 README 里那张表逐个数字对得上（不好看的也照写是硬要求）

@@ -188,6 +188,21 @@ npx playwright test       # ① 看板→详情→接手→研判→采纳→结
 
 截图由 `node scripts/screenshots.mjs` 生成，注入剧本后真实渲染，不是手摆的图。
 
+### 第 4 阶段验收（一条命令）
+
+```bash
+npm run accept:phase4                 # 只读：健康检查 / 页面 / 批次 / 保留 dry-run / 别名解析
+npm run accept:phase4 -- --write      # 追加写入：Alertmanager + Zabbix + 指标采样，验完整链路
+npm run accept:phase4 -- --clean      # 清掉刚才写入的验收数据
+```
+
+输出是逐项 `[PASS] / [FAIL] / [SKIP]` 加实测值（如「跳过已恢复=1 失败=0 入库=1」），
+退出码非 0 表示有失败。默认只读，因为同一份脚本会被对着生产实例跑一次；写入的数据都带
+`acceptance` 标记，`--clean` 可清干净（审计日志保留，它是追加型证据链）。
+
+脚本验不了的三件事单列在结尾，不混进 PASS：真实环境 ≥1 万条回填、降级模式下接受率是否可信、
+误抑制是「压错对象」还是「压太久」——当前口径只覆盖前者。
+
 ## 技术栈
 
 Next.js 15 App Router（RSC）· TypeScript strict（`noUncheckedIndexedAccess`）· Prisma 6 + PostgreSQL 16 · Tailwind v4 · @xyflow/react · OpenAI 兼容协议（DeepSeek / 通义 / OpenAI）· Vitest · Playwright
