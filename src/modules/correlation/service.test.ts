@@ -148,6 +148,115 @@ describe('AC-15 跨窗口沿用同一事件', () => {
   });
 });
 
+describe('二次收敛：同指纹跨周期重报（评审 P0-3）', () => {
+  it('原事件未结案时，40 分钟后的同指纹重报并回原事件，不新建', async () => {
+    const firstIds = await makeClusterAlerts(
+      'ACC-SW-06',
+      BASE,
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'sec-a',
+    );
+    const created = await runCorrelation(min(10));
+    expect(created.created).toHaveLength(1);
+    const incidentId = created.created[0]!.id;
+
+    // 40 分钟 > 30 分钟延续窗，但故障没恢复、事件仍 OPEN → 应当并回而不是新开
+    const again = await makeAlert('ACC-SW-06', 'LINK_DOWN', min(50), { metric: 'sec-a' });
+    const second = await runCorrelation(min(55));
+
+    expect(second.created).toHaveLength(0);
+    expect(second.converged).toHaveLength(1);
+    expect(second.converged[0]!.id).toBe(incidentId);
+    expect(second.converged[0]!.gapMinutes).toBeGreaterThan(30);
+    expect(second.converged[0]!.added).toBe(1);
+    expect(await incidentOf([...firstIds, again])).toEqual([incidentId]);
+  });
+
+  it('同指纹重报落在 30 分钟窗内仍走 B5，不在 converged 里重复记账', async () => {
+    const firstIds = await makeClusterAlerts(
+      'ACC-SW-07',
+      BASE,
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'sec-b',
+    );
+    const created = await runCorrelation(min(10));
+    const incidentId = created.created[0]!.id;
+
+    const again = await makeAlert('ACC-SW-07', 'LINK_DOWN', min(25), { metric: 'sec-b' });
+    const second = await runCorrelation(min(26));
+
+    expect(second.converged).toHaveLength(0);
+    expect(second.updated.map((u) => u.id)).toEqual([incidentId]);
+    expect(await incidentOf([...firstIds, again])).toEqual([incidentId]);
+  });
+
+  it('超过 6 小时的同指纹重报按新发生处理（新建事件并指回旧事件）', async () => {
+    await makeClusterAlerts('ACC-SW-08', BASE, ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'], 'sec-c');
+    const created = await runCorrelation(min(10));
+    const oldId = created.created[0]!.id;
+
+    // 事件仍 OPEN，但间隔 7 小时：更可能是"又发生了一次"或上一场忘了结案，
+    // 不能无限并下去，否则事件永远结不掉。
+    await makeClusterAlerts(
+      'ACC-SW-08',
+      min(7 * 60 + 10),
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'sec-c',
+    );
+    const second = await runCorrelation(min(7 * 60 + 15));
+
+    expect(second.converged).toHaveLength(0);
+    expect(second.created).toHaveLength(1);
+    const newId = second.created[0]!.id;
+    expect(newId).not.toBe(oldId);
+    const row = await db.incident.findUnique({
+      where: { id: newId },
+      select: { reopenedFromId: true },
+    });
+    expect(row?.reopenedFromId).toBe(oldId);
+  });
+});
+
+describe('时钟漂移与乱序补报', () => {
+  it('firstSeen 晚于聚合时刻的告警不参与本轮，等时间到了才成事件', async () => {
+    const ids = await makeClusterAlerts(
+      'ACC-SW-09',
+      min(30),
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'drift',
+    );
+
+    const early = await runCorrelation(min(10));
+    expect(early.created).toHaveLength(0);
+    expect(await incidentOf(ids)).toEqual([]);
+
+    const later = await runCorrelation(min(32));
+    expect(later.created).toHaveLength(1);
+    expect(await incidentOf(ids)).toEqual([later.created[0]!.id]);
+  });
+
+  it('乱序补报（firstSeen 早于事件内已有告警）挂到原事件，并把开始时间往前拉', async () => {
+    const firstIds = await makeClusterAlerts(
+      'ACC-SW-10',
+      min(20),
+      ['LINK_DOWN', 'PORT_FLAP', 'CRC_ERROR'],
+      'ooo',
+    );
+    const created = await runCorrelation(min(30));
+    const incidentId = created.created[0]!.id;
+
+    // 上游重传：这条告警其实发生在更早，但入库晚
+    const late = await makeAlert('ACC-SW-10', 'PACKET_LOSS', min(15), { metric: 'ooo-late' });
+    const second = await runCorrelation(min(31));
+
+    expect(second.created).toHaveLength(0);
+    expect(await incidentOf([...firstIds, late])).toEqual([incidentId]);
+
+    const incident = await db.incident.findUnique({ where: { id: incidentId } });
+    expect(incident?.startedAt.toISOString()).toBe(min(15).toISOString());
+  });
+});
+
 describe('AC-16 / B7 并发故障不合并', () => {
   it('两个簇相距 3 跳且时间重叠 → 生成 2 个事件', async () => {
     // 从真实拓扑里找一对 > 2 跳的接入交换机，避免硬编码种子拓扑

@@ -241,6 +241,7 @@ const ACTION_LABEL: Record<string, string> = {
   'correlation.run': '手动聚合',
   'report.generate': '生成报告',
   'case.verify': '案例确认',
+  'incident.split': '事件拆分',
 };
 
 export function auditActionLabel(action: string): string {

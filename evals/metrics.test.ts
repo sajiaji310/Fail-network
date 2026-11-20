@@ -18,6 +18,7 @@ function makeCase(
     title: '测试场景',
     note: '单测构造',
     mutations: { removeLinks: [] },
+    waves: [],
     scenario: {
       name: 'unit',
       title: '单测',
@@ -48,6 +49,8 @@ const obs = (over: Partial<Observation> = {}): Observation => ({
   alertTotal: 10,
   incidentDevices: [['CORE-SW-01', 'AGG-SW-03']],
   rootAlertSuppressed: false,
+  orphanAlerts: 0,
+  topologyLevel: 'FULL',
   analyses: [
     {
       code: 'INC-1',
@@ -64,6 +67,8 @@ const obs = (over: Partial<Observation> = {}): Observation => ({
       rawEvidence: 3,
       validEvidence: 3,
       durationMs: 20,
+      tokensUsed: null,
+      topologyLevel: 'FULL',
     },
   ],
   ...over,

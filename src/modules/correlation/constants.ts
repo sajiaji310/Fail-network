@@ -37,6 +37,12 @@ export const CONTINUATION_WINDOW_MS = 30 * 60 * 1000;
 /** B6 结案后重开窗口 */
 export const REOPEN_WINDOW_MS = 30 * 60 * 1000;
 
+/**
+ * 二次收敛窗口（评审 P0-3）：同一指纹在告警周期外重报时，只要原事件仍活跃，
+ * 就并回原事件而不是新建。6 小时是上限 —— 再长更像"真的又发生了一次"。
+ */
+export const SECONDARY_CONVERGENCE_MS = 6 * 60 * 60 * 1000;
+
 /** 拓扑邻接最大跳数（B7 超过则不合并） */
 export const MAX_HOPS = 2;
 

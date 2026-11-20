@@ -1,5 +1,6 @@
 import type { AlertStatus, IncidentStatus, Severity } from '@prisma/client';
 import { INCIDENT_STATUS_LABEL } from '@/modules/incidents/status';
+import { TOPOLOGY_LEVEL_LABEL, type TopologyLevel } from '@/modules/topology/completeness';
 import { StatusPill, type Tone } from './status-pill';
 
 /** 严重度/状态徽标：色 + 文字双编码（文档 11.3），调用方不要自己拼颜色 */
@@ -57,5 +58,23 @@ const INCIDENT_STATUS_TONE: Record<IncidentStatus, Tone> = {
 export function IncidentStatusPill({ status }: { status: IncidentStatus }) {
   return (
     <StatusPill tone={INCIDENT_STATUS_TONE[status]}>{INCIDENT_STATUS_LABEL[status]}</StatusPill>
+  );
+}
+
+const TOPOLOGY_TONE: Record<TopologyLevel, Tone> = {
+  FULL: 'ok',
+  PARTIAL: 'warn',
+  MISSING: 'danger',
+};
+
+/** 拓扑完整度徽标：缺拓扑不是"错误"，但必须让人一眼看到结论的可信边界 */
+export function TopologyPill({ level, compact }: { level: TopologyLevel; compact?: boolean }) {
+  return (
+    <StatusPill
+      tone={TOPOLOGY_TONE[level]}
+      className={compact ? 'px-1.5 py-0 text-[10.5px]' : undefined}
+    >
+      {TOPOLOGY_LEVEL_LABEL[level]}
+    </StatusPill>
   );
 }

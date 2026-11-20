@@ -15,6 +15,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadEnvFile } from 'node:process';
 import type { LinkStatus } from '@prisma/client';
+import { assessTopology } from '../src/modules/topology/completeness';
 import { aggregate, scoreCase, type Observation, type ObservedHypothesis } from './metrics';
 import { renderMarkdown, type EvalReport } from './report';
 import { EvalCaseSchema, type EvalCase } from './schema';
@@ -93,6 +94,7 @@ async function main() {
   const { db } = await import('@/lib/db');
   const { resetDemoData } = await import('@/modules/ingest/reset');
   const { runScenarioSpec } = await import('@/modules/ingest/scenario');
+  const { runScenarioInWaves } = await import('./waves');
   const { runAnalysis } = await import('@/modules/rca/analyze');
 
   const all = loadCases(options.set);
@@ -136,11 +138,18 @@ async function main() {
     }
 
     try {
-      const sim = await runScenarioSpec(kase.scenario, {
-        seed: 42,
-        now: new Date(),
-        source: `eval:${kase.id}`,
-      });
+      const sim =
+        kase.waves.length > 0
+          ? await runScenarioInWaves(kase.scenario, kase.waves, {
+              seed: 42,
+              now: new Date(),
+              source: `eval:${kase.id}`,
+            })
+          : await runScenarioSpec(kase.scenario, {
+              seed: 42,
+              now: new Date(),
+              source: `eval:${kase.id}`,
+            });
 
       const incidents = await db.incident.findMany({
         where: { clusterKey: { not: null } },
@@ -150,13 +159,15 @@ async function main() {
           code: true,
           alerts: {
             where: { status: { not: 'SUPPRESSED' } },
-            select: { fingerprint: { select: { device: { select: { name: true } } } } },
+            select: {
+              fingerprint: { select: { deviceId: true, device: { select: { name: true } } } },
+            },
           },
         },
       });
 
       // 证据 ref → 设备名：一次把三张表读进来，避免每条证据一次查询
-      const [alertRows, changeRows, linkRows] = await Promise.all([
+      const [alertRows, changeRows, linkRows, orphanAlerts] = await Promise.all([
         db.alert.findMany({
           select: { id: true, fingerprint: { select: { device: { select: { name: true } } } } },
         }),
@@ -164,10 +175,14 @@ async function main() {
         db.topologyLink.findMany({
           select: {
             id: true,
+            sourceId: true,
+            targetId: true,
             source: { select: { name: true } },
             target: { select: { name: true } },
           },
         }),
+        // 孤岛告警：没有进任何事件、仍活跃 —— 用户只能逐条看的量
+        db.alert.count({ where: { incidentId: null, status: 'ACTIVE' } }),
       ]);
       const deviceOfRef = new Map<string, string[]>();
       for (const row of alertRows) {
@@ -216,8 +231,27 @@ async function main() {
           rawEvidence: outcome.verify.stats.rawEvidence,
           validEvidence: outcome.verify.stats.validEvidence,
           durationMs,
+          tokensUsed: outcome.tokensUsed,
+          topologyLevel: outcome.topologyLevel,
         });
       }
+
+      // 场景级拓扑完整度：取事件内全部设备的并集（单个事件视角可能漏掉跨事件的缺失）
+      const incidentDeviceIds = [
+        ...new Set(incidents.flatMap((i) => i.alerts.map((a) => a.fingerprint.deviceId))),
+      ];
+      const deviceNames = new Map(
+        incidents.flatMap((i) =>
+          i.alerts.map((a) => [a.fingerprint.deviceId, a.fingerprint.device.name] as const),
+        ),
+      );
+      const coverage =
+        incidents.length === 0
+          ? null
+          : assessTopology(
+              incidentDeviceIds.map((id) => ({ id, name: deviceNames.get(id) ?? id })),
+              linkRows,
+            );
 
       const observation: Observation = {
         alertTotal: sim.alertTotal,
@@ -225,6 +259,8 @@ async function main() {
           ...new Set(i.alerts.map((a) => a.fingerprint.device.name)),
         ]),
         rootAlertSuppressed,
+        orphanAlerts,
+        topologyLevel: coverage?.level ?? null,
         analyses,
       };
 

@@ -2,8 +2,8 @@
   "meta": {
     "set": "test",
     "mode": "fallback",
-    "startedAt": "2026-11-19T16:31:32.109Z",
-    "durationMs": 890
+    "startedAt": "2026-11-20T14:20:15.634Z",
+    "durationMs": 1265
   },
   "agg": {
     "total": 8,
@@ -24,18 +24,51 @@
         "top3": 3
       }
     },
+    "compressionByKind": {
+      "POSITIVE": 7.5,
+      "DISTRACTOR": 7.5,
+      "ADVERSARIAL": 4.8
+    },
     "top1Rate": 0.857,
     "top3Rate": 0.857,
     "precision": 1,
     "recall": 1,
     "compression": 6,
     "compressionOnPositive": 7.5,
+    "handlingUnits": 10,
+    "orphanAlerts": 1,
+    "compressionOnUserLoad": 5.4,
+    "compressionCeiling": 6,
+    "compressionEfficiency": 1,
+    "topology": {
+      "full": {
+        "total": 5,
+        "answerable": 4,
+        "top1": 4,
+        "top3": 4,
+        "alerts": 35,
+        "incidents": 5,
+        "compression": 7
+      },
+      "degraded": {
+        "total": 3,
+        "answerable": 3,
+        "top1": 2,
+        "top3": 2,
+        "alerts": 19,
+        "incidents": 4,
+        "compression": 4.75
+      }
+    },
     "answerable": 7,
     "precisionDenominator": 7,
     "rootAlertTotal": 6,
     "suppressionErrors": 0,
+    "criticalSuppressions": 0,
     "evidenceRate": 1,
-    "avgDurationMs": 23,
+    "avgDurationMs": 40,
+    "p95DurationMs": 94,
+    "totalTokens": 0,
     "fallbackRate": 1,
     "passed": 7
   },
@@ -60,9 +93,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 54,
+      "durationMs": 94,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -85,9 +122,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 10,
       "validEvidence": 10,
-      "durationMs": 25,
+      "durationMs": 48,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -110,9 +151,13 @@
       "hypothesisTotal": 4,
       "rawEvidence": 12,
       "validEvidence": 12,
-      "durationMs": 29,
+      "durationMs": 74,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 2,
+      "tokens": 0,
+      "topologyLevel": "PARTIAL",
       "failures": []
     },
     {
@@ -135,9 +180,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 14,
+      "durationMs": 38,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "PARTIAL",
       "failures": []
     },
     {
@@ -160,9 +209,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 27,
+      "durationMs": 21,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -188,6 +241,10 @@
       "durationMs": 17,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -210,9 +267,13 @@
       "hypothesisTotal": 0,
       "rawEvidence": 0,
       "validEvidence": 0,
-      "durationMs": 8,
+      "durationMs": 12,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -235,9 +296,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 13,
+      "durationMs": 19,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 1,
+      "handlingUnits": 2,
+      "tokens": 0,
+      "topologyLevel": "PARTIAL",
       "failures": [
         "事件未覆盖标注设备 CORE-SW-01",
         "Top3 未命中标注根因"

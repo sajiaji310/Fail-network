@@ -1,4 +1,5 @@
 import { buildDeviceGraph } from '@/modules/correlation/topology';
+import { assessTopology } from '@/modules/topology/completeness';
 import type { ContextBundle } from './context';
 
 /**
@@ -226,6 +227,7 @@ export function makeContext(): ContextBundle {
       },
     ],
     graph,
+    topology: assessTopology([DEV.agg2, DEV.acc7], LINKS),
     trim: { trimmed: [], chars: 0 },
   };
 }

@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { AlertTable } from './alert-table';
 import { HypothesisPanel } from './hypothesis-panel';
 import { IncidentActions } from './incident-actions';
+import { SplitButton } from './incident-split';
 import { IncidentTimeline } from './incident-timeline';
 import { ReportPanel } from './report-panel';
 import { TopologyCanvas } from './topology-canvas';
@@ -28,6 +29,8 @@ export function IncidentWorkspace({
   report: { id: string; markdown: string; createdAt: string } | null;
 }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  /** 拆分选择：勾选的告警 id，只影响拆分，不影响筛选 */
+  const [selectedAlertIds, setSelectedAlertIds] = useState<ReadonlySet<string>>(new Set());
 
   const affectedIds = useMemo(() => detail.devices.map((d) => d.id), [detail.devices]);
   const scope = useMemo(
@@ -44,7 +47,18 @@ export function IncidentWorkspace({
   );
 
   const selectedDevice = detail.devices.find((d) => d.id === selectedDeviceId) ?? null;
-  const toggle = (id: string) => setSelectedDeviceId((prev) => (prev === id ? null : id));
+  const toggle = (id: string) => {
+    // 切设备时清空勾选：否则选中的行被筛掉了，拆分按钮上的数字对不上眼前的内容
+    setSelectedAlertIds(new Set());
+    setSelectedDeviceId((prev) => (prev === id ? null : id));
+  };
+  const toggleAlert = (alertId: string) =>
+    setSelectedAlertIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(alertId)) next.delete(alertId);
+      else next.add(alertId);
+      return next;
+    });
 
   return (
     <>
@@ -101,25 +115,34 @@ export function IncidentWorkspace({
               <span className="font-mono text-[10px] text-text-tertiary">
                 {alerts.length} / {detail.alerts.length}
               </span>
-              {selectedDevice ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDeviceId(null)}
-                  className="ml-auto inline-flex items-center gap-1 rounded-[4px] bg-primary-soft px-1.5 py-0.5 font-mono text-[10px] text-primary hover:bg-primary-soft/70"
-                >
-                  {selectedDevice.name}
-                  <X size={10} strokeWidth={2} />
-                </button>
-              ) : (
-                <span className="ml-auto text-[10px] text-text-tertiary">
-                  点设备名或拓扑节点可筛选
-                </span>
-              )}
+              <div className="ml-auto flex items-center gap-2">
+                {selectedDevice ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDeviceId(null)}
+                    className="inline-flex items-center gap-1 rounded-[4px] bg-primary-soft px-1.5 py-0.5 font-mono text-[10px] text-primary hover:bg-primary-soft/70"
+                  >
+                    {selectedDevice.name}
+                    <X size={10} strokeWidth={2} />
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-text-tertiary">勾选告警可拆分为新事件</span>
+                )}
+                <SplitButton
+                  incidentId={detail.id}
+                  alertIds={[...selectedAlertIds]}
+                  totalAlerts={detail.alerts.length}
+                  onDone={() => setSelectedAlertIds(new Set())}
+                />
+              </div>
             </div>
             <AlertTable
               rows={alerts}
               selectedDeviceId={selectedDeviceId}
               onSelectDevice={toggle}
+              selectable
+              selectedIds={selectedAlertIds}
+              onToggleRow={toggleAlert}
               maxHeight={280}
               emptyTitle={selectedDevice ? `${selectedDevice.name} 没有关联告警` : '暂无关联告警'}
               emptyHint="取消设备筛选可查看事件内全部告警。"
@@ -138,6 +161,8 @@ export function IncidentWorkspace({
             impactScope={detail.impactScope}
             changes={detail.changes}
             devices={detail.devices}
+            topology={detail.topology}
+            topologyNote={detail.topologyNote}
             selectedDeviceId={selectedDeviceId}
             onSelectDevice={toggle}
           />

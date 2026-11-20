@@ -22,10 +22,23 @@ const AggSchema = z.object({
   recall: z.number(),
   compression: z.number(),
   compressionOnPositive: z.number(),
+  /** 按「事件 + 孤岛告警」口径的压缩比：用户真正逐条看完的量 */
+  compressionOnUserLoad: z.number().optional(),
   avgDurationMs: z.number(),
   suppressionErrors: z.number(),
   passed: z.number(),
   answerable: z.number(),
+  // 第 2 阶段新增口径：全部 optional，老产物（没有这些字段）仍能解析，
+  // 页面按"有没有"决定要不要显示，而不是报错或显示 0。
+  /** 完美聚类下的压缩比上限；压缩比 = 上限 即代表已无可压缩空间 */
+  compressionCeiling: z.number().optional(),
+  /** 压缩比 / 上限：衡量"该压的都压了吗"，比绝对比值更能反映质量 */
+  compressionEfficiency: z.number().optional(),
+  /** 处理单元 = 事件 + 孤岛告警，用户真正要逐条看完的条数 */
+  handlingUnits: z.number().optional(),
+  orphanAlerts: z.number().optional(),
+  p95DurationMs: z.number().optional(),
+  totalTokens: z.number().optional(),
 });
 
 const ScoreSchema = z.object({

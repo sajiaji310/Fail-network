@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { llmMode, type LlmMode } from '@/lib/env';
 import { completeJson, extractJson } from '@/lib/llm/client';
 import { createLogger } from '@/lib/logger';
+import { capConfidence } from '@/modules/topology/completeness';
 import { buildIncidentContext, type ContextBundle } from './context';
 import { ruleFallback } from './fallback';
 import { buildMockModelOutput } from './mock';
@@ -43,6 +44,10 @@ export type AnalysisOutcome = {
   impactScope: string | null;
   hypotheses: HypothesisDraft[];
   missingInfo: string[];
+  /** 本次（或缓存那次）的 token 用量，评测算成本用 */
+  tokensUsed: number | null;
+  /** 研判时的拓扑完整度，评测按它分组统计 */
+  topologyLevel: 'FULL' | 'PARTIAL' | 'MISSING';
   verify: {
     dropped: Drop[];
     stats: { rawEvidence: number; validEvidence: number; relevanceRate: number };
@@ -115,6 +120,8 @@ async function readCachedAnalysis(idOrCode: string): Promise<AnalysisOutcome | n
     impactScope: row.impactScope,
     hypotheses,
     missingInfo: meta.missingInfo,
+    tokensUsed: meta.tokensUsed ?? null,
+    topologyLevel: meta.topology?.level ?? 'FULL',
     verify: meta.verify,
     trim: meta.trim,
     degradedReason: meta.degradedReason,
@@ -205,7 +212,12 @@ export async function runAnalysis(
   const verify = verifyHypotheses(produced.result.hypotheses, buildVerifyContext(ctx));
 
   const analyzedAt = new Date().toISOString();
-  const kept = verify.kept;
+  // 缺拓扑时一律压低置信度（评审 P0-4）：上限由完整度决定，不是模型自己说了算。
+  // 只做 min 截断，不改变假设之间的相对顺序。
+  const kept = verify.kept.map((hypothesis) => ({
+    ...hypothesis,
+    confidence: capConfidence(hypothesis.confidence, ctx.topology.level),
+  }));
   const missingInfo =
     kept.length === 0
       ? [...new Set([...produced.result.missingInfo, '全部假设未通过证据校验，未能给出可信根因'])]
@@ -220,6 +232,15 @@ export async function runAnalysis(
     verify: { dropped: verify.dropped, stats: verify.stats },
     trim: ctx.trim.trimmed,
     degradedReason: produced.degradedReason,
+    tokensUsed: produced.tokensUsed,
+    topology: {
+      level: ctx.topology.level,
+      deviceCount: ctx.topology.deviceCount,
+      linkedDevices: ctx.topology.linkedDevices,
+      isolatedDevices: ctx.topology.isolatedDevices.length,
+      components: ctx.topology.components,
+      maxHops: ctx.topology.maxHops,
+    },
   };
 
   await persistAnalysis({
@@ -252,6 +273,8 @@ export async function runAnalysis(
     impactScope: kept.length > 0 ? produced.result.impactScope : null,
     hypotheses: kept,
     missingInfo,
+    tokensUsed: produced.tokensUsed,
+    topologyLevel: ctx.topology.level,
     verify: { dropped: verify.dropped, stats: verify.stats },
     trim: ctx.trim.trimmed,
     degradedReason: produced.degradedReason,

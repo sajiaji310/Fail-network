@@ -25,6 +25,10 @@ const score = (over: Partial<CaseScore> = {}): CaseScore => ({
   durationMs: 40,
   source: 'RULE_FALLBACK',
   dropped: 0,
+  orphanAlerts: 0,
+  handlingUnits: 1,
+  tokens: 0,
+  topologyLevel: 'FULL',
   failures: [],
   ...over,
 });

@@ -7,6 +7,11 @@ import {
   type ClosureRecord,
   type StatusLogEntry,
 } from './closure-view';
+import {
+  assessTopology,
+  coverageNote,
+  type TopologyCoverage,
+} from '@/modules/topology/completeness';
 import { aggregateIncidentDevices, type IncidentDevice } from './devices';
 import { toHypothesisView, type HypothesisView } from './hypothesis-view';
 import { buildTimeline, type TimelineItem } from './timeline';
@@ -77,6 +82,9 @@ export type IncidentDetail = {
   timeline: TimelineItem[];
   timelineTotal: number;
   timelineTruncated: boolean;
+  /** 拓扑完整度（评审 P0-4）：缺拓扑时页面把结论降级为候选排序 */
+  topology: TopologyCoverage;
+  topologyNote: string | null;
   stats: {
     alertCount: number;
     suppressedCount: number;
@@ -183,29 +191,39 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
     })),
   );
 
-  const changes = devices.length
-    ? await db.changeRecord.findMany({
-        where: {
-          deviceId: { in: devices.map((d) => d.id) },
-          changedAt: {
-            gte: new Date(incident.startedAt.getTime() - CHANGE_LOOKBACK_MS),
-            lte: new Date(
-              Math.max(incident.lastSeen.getTime(), incident.startedAt.getTime()) +
-                CHANGE_LOOKAHEAD_MS,
-            ),
+  // 拓扑取全量链路：连通性判定允许经过非事件设备（核心 → 汇聚常经中间设备），
+  // 只查"紧邻事件设备"的链路会把正常拓扑误判成断裂。
+  const [changes, linkRows] = await Promise.all([
+    devices.length
+      ? db.changeRecord.findMany({
+          where: {
+            deviceId: { in: devices.map((d) => d.id) },
+            changedAt: {
+              gte: new Date(incident.startedAt.getTime() - CHANGE_LOOKBACK_MS),
+              lte: new Date(
+                Math.max(incident.lastSeen.getTime(), incident.startedAt.getTime()) +
+                  CHANGE_LOOKAHEAD_MS,
+              ),
+            },
           },
-        },
-        orderBy: { changedAt: 'asc' },
-        select: {
-          id: true,
-          kind: true,
-          content: true,
-          operator: true,
-          changedAt: true,
-          device: { select: { id: true, name: true } },
-        },
-      })
-    : [];
+          orderBy: { changedAt: 'asc' },
+          select: {
+            id: true,
+            kind: true,
+            content: true,
+            operator: true,
+            changedAt: true,
+            device: { select: { id: true, name: true } },
+          },
+        })
+      : Promise.resolve([]),
+    db.topologyLink.findMany({ select: { sourceId: true, targetId: true } }),
+  ]);
+
+  const topology = assessTopology(
+    devices.map((d) => ({ id: d.id, name: d.name })),
+    linkRows,
+  );
 
   // 时间线与返回值共用同一份变更投影，避免两处字段口径漂移
   const timelineChanges = changes.map((c) => ({
@@ -272,6 +290,8 @@ export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetai
     timeline: timeline.items,
     timelineTotal: timeline.total,
     timelineTruncated: timeline.truncated,
+    topology,
+    topologyNote: coverageNote(topology),
     stats: {
       alertCount: alerts.length,
       suppressedCount: alerts.filter((a) => a.status === 'SUPPRESSED').length,

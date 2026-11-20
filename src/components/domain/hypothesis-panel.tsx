@@ -10,6 +10,7 @@ import type { AnalysisMeta } from '@/modules/rca/schema';
 import type { IncidentChange, IncidentDevice } from '@/modules/incidents/detail';
 import type { HypothesisView } from '@/modules/incidents/hypothesis-view';
 import { changeKindLabel } from '@/modules/incidents/timeline';
+import type { TopologyCoverage } from '@/modules/topology/completeness';
 import { EmptyHypotheses, HypothesisCard, VerifyBadge } from './hypothesis-card';
 
 /**
@@ -28,6 +29,8 @@ export type HypothesisPanelProps = {
   impactScope: string | null;
   changes: readonly IncidentChange[];
   devices: readonly IncidentDevice[];
+  topology: TopologyCoverage;
+  topologyNote: string | null;
   selectedDeviceId?: string | null;
   onSelectDevice?: (deviceId: string) => void;
 };
@@ -40,6 +43,8 @@ export function HypothesisPanel({
   impactScope,
   changes,
   devices,
+  topology,
+  topologyNote,
   selectedDeviceId = null,
   onSelectDevice,
 }: HypothesisPanelProps) {
@@ -106,7 +111,17 @@ export function HypothesisPanel({
     <div className="space-y-4">
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
-          <h2 className="text-[13px] font-medium">根因研判</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-[13px] font-medium">根因研判</h2>
+            {topology.level !== 'FULL' ? (
+              <span
+                className="rounded-[4px] bg-warn-soft px-1.5 py-px text-[10px] font-medium text-warn ring-1 ring-inset ring-warn/18"
+                title="拓扑不完整，以下按候选可能性排序，不作为根因结论"
+              >
+                候选排序
+              </span>
+            ) : null}
+          </div>
           {hypotheses.length > 0 ? (
             <div className="flex items-center gap-1.5">
               {confirmReanalyze ? (
@@ -158,6 +173,12 @@ export function HypothesisPanel({
               </>
             ) : null}
           </div>
+        ) : null}
+
+        {topologyNote ? (
+          <p className="mb-2 rounded-[6px] border border-warn/25 bg-warn-soft px-2 py-1.5 text-[10.5px] leading-4 text-warn">
+            {topologyNote}
+          </p>
         ) : null}
 
         {summary ? (

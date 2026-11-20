@@ -53,11 +53,27 @@ export function renderMarkdown(report: EvalReport): string {
   lines.push(
     `| 平均研判耗时 | ${agg.avgDurationMs} ms | < 8000 ms | ${verdict(agg.avgDurationMs < 8000)} |`,
   );
+  lines.push(`| P95 研判耗时 | ${agg.p95DurationMs} ms | — | — |`);
   lines.push(
-    `| 告警压缩比 | ${agg.compression.toFixed(1)}:1 | ≥ 8:1 | ${verdict(agg.compression >= TARGETS.compression)} |`,
+    `| 告警压缩比（整体） | ${agg.compression.toFixed(1)}:1 | ≥ 8:1 | ${verdict(agg.compression >= TARGETS.compression)} |`,
   );
   lines.push(
-    `| 告警压缩比（仅正例） | ${agg.compressionOnPositive.toFixed(1)}:1 | ≥ 8:1 | ${verdict(agg.compressionOnPositive >= TARGETS.compression)} |`,
+    `| 告警压缩比（按处理单元） | ${agg.compressionOnUserLoad.toFixed(1)}:1 | ≥ 8:1 | ${verdict(agg.compressionOnUserLoad >= TARGETS.compression)} |`,
+  );
+  lines.push(
+    `| 压缩比理论上限 | ${agg.compressionCeiling.toFixed(1)}:1（按标注事件数） | — | 本集平均每个事件 ${(
+      scores.reduce((sum, s) => sum + s.alertTotal, 0) /
+      Math.max(
+        1,
+        scores.reduce((sum, s) => sum + s.expectIncidents, 0),
+      )
+    ).toFixed(1)} 条告警 |`,
+  );
+  lines.push(
+    `| 压缩效率（实际 / 理论） | ${percent(agg.compressionEfficiency)} | ≥ 95% | ${verdict(agg.compressionEfficiency >= 0.95)} |`,
+  );
+  lines.push(
+    `| 处理单元（事件 + 孤岛告警） | ${agg.handlingUnits}（${agg.orphanAlerts} 条孤岛） | — | — |`,
   );
   lines.push(
     `| 事件精确率 / 召回率 | ${percent(agg.precision)} / ${percent(agg.recall)} | ≥ 85% / ≥ 90% | ${verdict(agg.precision >= 0.85 && agg.recall >= 0.9)} |`,
@@ -65,18 +81,60 @@ export function renderMarkdown(report: EvalReport): string {
   lines.push(
     `| 根因告警误抑制率 | ${agg.rootAlertTotal === 0 ? '样本为空' : percent(agg.suppressionErrors / agg.rootAlertTotal)} | = 0 | ${verdict(agg.suppressionErrors === 0)} |`,
   );
+  lines.push(
+    `| 研判 token 用量 | ${agg.totalTokens === 0 ? '规则引擎（无 token）' : `${agg.totalTokens}`} | — | — |`,
+  );
   lines.push(`| 全通过场景 | ${agg.passed}/${scores.length} | — | — |`);
+  lines.push('');
+  lines.push(
+    '> 压缩比口径：绝对比值受数据集规模约束 —— 本集平均每个事件只有个位数告警，理论上限就低于 8:1，再完美的聚类也超不过它。判断压缩做得好不好看「压缩效率」，判断生产价值看真实数据规模下的绝对比值。',
+  );
+  lines.push('');
+
+  lines.push('### 压缩比分组');
+  lines.push('');
+  lines.push('| 分组 | 场景数 | 告警 | 事件 | 压缩比 |');
+  lines.push('| --- | --- | --- | --- | --- |');
+  const KIND_LABEL: Record<string, string> = {
+    POSITIVE: '正例',
+    DISTRACTOR: '干扰例',
+    ADVERSARIAL: '对抗例',
+  };
+  for (const [kind, ratio] of Object.entries(agg.compressionByKind)) {
+    const group = scores.filter((s) => s.kind === kind);
+    const a = group.reduce((sum, s) => sum + s.alertTotal, 0);
+    const i = group.reduce((sum, s) => sum + s.incidentTotal, 0);
+    if (group.length === 0) continue;
+    lines.push(
+      `| ${KIND_LABEL[kind] ?? kind} | ${group.length} | ${a} | ${i} | ${ratio.toFixed(1)}:1 |`,
+    );
+  }
+  lines.push(
+    `| 整体 | ${scores.length} | ${scores.reduce((sum, s) => sum + s.alertTotal, 0)} | ${scores.reduce((sum, s) => sum + s.incidentTotal, 0)} | ${agg.compression.toFixed(1)}:1 |`,
+  );
+  lines.push('');
+
+  lines.push('### 拓扑完整度分组');
+  lines.push('');
+  lines.push('| 分组 | 场景数 | Top1 | Top3 | 告警 | 事件 | 压缩比 |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+  for (const [label, group] of [
+    ['拓扑完整', agg.topology.full],
+    ['部分 / 完全缺失', agg.topology.degraded],
+  ] as const) {
+    if (group.total === 0) continue;
+    lines.push(
+      `| ${label} | ${group.total} | ${group.top1}/${group.answerable} | ${group.top3}/${group.answerable} | ${group.alerts} | ${group.incidents} | ${group.compression.toFixed(1)}:1 |`,
+    );
+  }
+  lines.push('');
+  lines.push('> 期望 0 个事件的场景没有可评估的拓扑，不参与该分组。');
   lines.push('');
 
   lines.push('### 分层命中');
   lines.push('');
   lines.push('| 类别 | 场景数 | Top1 | Top3 |');
   lines.push('| --- | --- | --- | --- |');
-  const KIND_LABEL: Record<string, string> = {
-    POSITIVE: '正例',
-    DISTRACTOR: '干扰例',
-    ADVERSARIAL: '对抗例',
-  };
   for (const [kind, item] of Object.entries(agg.byKind)) {
     if (item.total === 0) continue;
     lines.push(

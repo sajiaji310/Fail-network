@@ -1,6 +1,11 @@
 import type { IncidentStatus, Severity } from '@prisma/client';
 import type { AlertCluster, ClusterAlert } from './cluster';
-import { CLUSTER_THRESHOLD, CONTINUATION_WINDOW_MS, FOLLOWUP_LOOKBACK_MS } from './constants';
+import {
+  CLUSTER_THRESHOLD,
+  CONTINUATION_WINDOW_MS,
+  FOLLOWUP_LOOKBACK_MS,
+  SECONDARY_CONVERGENCE_MS,
+} from './constants';
 import { typeAffinity } from './affinity';
 import { canRelate, scorePair } from './scoring';
 import type { DeviceGraph } from './topology';
@@ -18,6 +23,8 @@ export type LoadedIncident = {
   lastSeen: Date;
   deviceIds: string[];
   alerts: ClusterAlert[];
+  /** 人工拆分来源：与来源事件之间禁止再自动合并 */
+  splitFromId: string | null;
 };
 
 export type IncidentRowWithAlerts = {
@@ -26,6 +33,7 @@ export type IncidentRowWithAlerts = {
   status: IncidentStatus;
   startedAt: Date;
   lastSeen: Date;
+  splitFromId: string | null;
   alerts: Array<{
     id: string;
     fingerprintId: string;
@@ -59,6 +67,7 @@ export function toLoadedIncident(row: IncidentRowWithAlerts): LoadedIncident {
     lastSeen: row.lastSeen,
     deviceIds: [...new Set(alerts.map((a) => a.deviceId))],
     alerts,
+    splitFromId: row.splitFromId,
   };
 }
 
@@ -176,6 +185,37 @@ export function findContinuation(
     }
     if (score < CLUSTER_THRESHOLD) continue;
     if (!best || gap < best.gap) best = { incident, gap, score };
+  }
+  return best?.incident ?? null;
+}
+
+/**
+ * 二次收敛窗口（评审 P0-3）：同指纹跨周期重报时，允许并回仍活跃的原事件。
+ *
+ * 为什么需要独立于 30 分钟延续窗：告警周期规则（`decideCycle`）认为静默 30 分钟后
+ * 再报是"新周期"，会新建一条 Alert 行；如果故障本身没有恢复（设备仍然 Down、
+ * 光功率仍然劣化），用户看到的就是同一场故障被拆成 5 个事件、5 份报告。
+ * 指纹级相同（同设备同类型同指标）是比打分更强的证据，不该被时间窗否掉。
+ *
+ * 6 小时上限的理由：再长就更像"真的又发生了一次"，也可能是上一场事件忘了结案；
+ * 超过上限仍走新建事件 + 指回旧事件的路径，人工可以用"拆分"纠正方向。
+ */
+
+export function findFingerprintContinuation(
+  cluster: AlertCluster,
+  incidents: readonly LoadedIncident[],
+  now: Date,
+): LoadedIncident | null {
+  const fingerprints = new Set(cluster.alerts.map((a) => a.fingerprintId));
+  const nowMs = now.getTime();
+  const horizon = nowMs - SECONDARY_CONVERGENCE_MS;
+
+  let best: { incident: LoadedIncident; lastSeenMs: number } | null = null;
+  for (const incident of incidents) {
+    const lastSeenMs = incident.lastSeen.getTime();
+    if (lastSeenMs < horizon || lastSeenMs > nowMs) continue;
+    if (!incident.alerts.some((a) => fingerprints.has(a.fingerprintId))) continue;
+    if (!best || lastSeenMs > best.lastSeenMs) best = { incident, lastSeenMs };
   }
   return best?.incident ?? null;
 }

@@ -56,6 +56,7 @@ function incident(alerts: ClusterAlert[], lastSeen: Date): LoadedIncident {
     lastSeen,
     deviceIds: [...new Set(alerts.map((a) => a.deviceId))],
     alerts,
+    splitFromId: null,
   };
 }
 

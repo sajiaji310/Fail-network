@@ -10,10 +10,12 @@ import {
   MIN_ALERTS_PER_INCIDENT,
   REOPEN_WINDOW_MS,
   SCORE_TIE_EPSILON,
+  SECONDARY_CONVERGENCE_MS,
 } from './constants';
 import {
   bestIncidentAboveThreshold,
   findContinuation,
+  findFingerprintContinuation,
   mapAlertRow,
   matchesFault,
   rankIncidents,
@@ -58,6 +60,7 @@ const INCIDENT_SELECT = {
   startedAt: true,
   lastSeen: true,
   resolvedAt: true,
+  splitFromId: true,
   alerts: {
     where: { status: { not: 'SUPPRESSED' as const } },
     select: {
@@ -84,6 +87,8 @@ export type CorrelationSummary = {
   created: Array<{ id: string; code: string; alerts: number }>;
   updated: Array<{ id: string; code: string; added: number }>;
   reopened: Array<{ id: string; code: string; reopenedCount: number }>;
+  /** 二次收敛：同指纹跨周期重报，并回仍活跃的原事件（评审 P0-3） */
+  converged: Array<{ id: string; code: string; added: number; gapMinutes: number }>;
   merged: Array<{ from: string; into: string; movedAlerts: number }>;
   noiseAlerts: number;
   durationMs: number;
@@ -99,6 +104,11 @@ async function loadGraph(): Promise<DeviceGraph> {
 }
 
 type ClosedCandidate = { kind: 'recent' | 'older'; incident: LoadedIncident };
+
+/** 人工拆分过的配对（A 从 B 拆出）不参与自动合并 */
+function manuallySeparated(a: LoadedIncident, b: LoadedIncident): boolean {
+  return a.splitFromId === b.id || b.splitFromId === a.id;
+}
 
 function toMergeCandidate(incident: LoadedIncident): MergeCandidate {
   return {
@@ -175,6 +185,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
     created: [],
     updated: [],
     reopened: [],
+    converged: [],
     merged: [],
     noiseAlerts: 0,
     durationMs: 0,
@@ -264,6 +275,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
     if (
       best &&
       second &&
+      !manuallySeparated(best.incident, second.incident) &&
       second.score >= CLUSTER_THRESHOLD &&
       best.score - second.score < SCORE_TIE_EPSILON
     ) {
@@ -297,6 +309,29 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
         added: cluster.alerts.length,
       });
       touchActive(continuation, cluster.alerts);
+      return;
+    }
+
+    // 二次收敛（评审 P0-3）：同一指纹在 30 分钟周期外重报（告警行是新周期），
+    // 只要原事件还没结案，就说明故障没恢复 —— 并回去，别让一场故障变成Ｎ张工单。
+    // 放在 best 之前：指纹完全相同是比打分更强的证据，不该被别的候选抢走。
+    const converged = findFingerprintContinuation(cluster, active, now);
+    if (converged) {
+      const gapMinutes = Math.max(
+        0,
+        Math.round(
+          (cluster.alerts[0]!.firstSeen.getTime() - converged.lastSeen.getTime()) / 60_000,
+        ),
+      );
+      await attachAlerts(converged.id, cluster.alerts);
+      await refreshIncidentAggregate(converged.id);
+      summary.converged.push({
+        id: converged.id,
+        code: converged.code,
+        added: cluster.alerts.length,
+        gapMinutes,
+      });
+      touchActive(converged, cluster.alerts);
       return;
     }
 
@@ -337,9 +372,15 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
     const clusterKey = clusterKeyOf(cluster.alerts.map((a) => a.fingerprintId));
     const byKey = await db.incident.findUnique({
       where: { clusterKey },
-      select: { id: true, code: true, status: true },
+      select: { id: true, code: true, status: true, lastSeen: true },
     });
-    if (byKey) {
+    // 同簇但活跃事件已经静默超过二次收敛窗口 → 按"又发生一次"处理，
+    // 落到最下面新建（带 reopen 指回），否则事件会被一周前的陈账一直吸住。
+    const staleActive =
+      byKey !== null &&
+      !isClosedStatus(byKey.status) &&
+      now.getTime() - byKey.lastSeen.getTime() > SECONDARY_CONVERGENCE_MS;
+    if (byKey && !staleActive) {
       if (isClosedStatus(byKey.status)) {
         const reopenedCount = await reopenIncident(byKey.id, now);
         summary.reopened.push({ id: byKey.id, code: byKey.code, reopenedCount });
@@ -353,7 +394,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
 
     // 超过 30 分钟的同簇历史 → 新建事件并指回旧事件（B6 后半段）
     const older = closed.find((c) => c.kind === 'older' && matchesFault(cluster, c.incident));
-    const created = await createIncident(cluster, older?.incident.id);
+    const created = await createIncident(cluster, older?.incident.id ?? byKey?.id);
     summary.created.push({
       id: created.id,
       code: created.code,
@@ -368,6 +409,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
         lastSeen: cluster.alerts[0]!.lastSeen,
         deviceIds: cluster.deviceIds,
         alerts: [],
+        splitFromId: null,
       },
       cluster.alerts,
     );
@@ -391,6 +433,8 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i]!;
         const b = list[j]!;
+        // 人工拆分的两个事件不再自动合并：人已经判断过"这是两回事"
+        if (manuallySeparated(a, b)) continue;
         const check = checkMergeable(toMergeCandidate(a), toMergeCandidate(b), graph);
         if (!check.ok) continue;
         const merged = await mergeIncidents(a.id, b.id, now);

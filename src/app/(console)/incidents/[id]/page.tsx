@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { IncidentWorkspace } from '@/components/domain/incident-workspace';
-import { IncidentStatusPill, SeverityPill } from '@/components/ui/badges';
+import { IncidentStatusPill, SeverityPill, TopologyPill } from '@/components/ui/badges';
 import { absTime, duration, relTime } from '@/lib/utils/time';
 import { getIncidentDetail } from '@/modules/incidents/detail';
 import { getLatestReport } from '@/modules/report/service';
@@ -39,6 +39,7 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
           <span className="font-mono text-[12px] text-text-tertiary">{detail.code}</span>
           <SeverityPill severity={detail.severity} />
           <IncidentStatusPill status={detail.status} />
+          <TopologyPill level={detail.topology.level} />
           {detail.reopenedCount > 0 ? (
             <span className="rounded-[4px] bg-warn-soft px-1.5 py-px text-[11px] text-warn">
               重开 {detail.reopenedCount} 次

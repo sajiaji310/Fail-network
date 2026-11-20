@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS = [
   'correlation.run',
   'report.generate',
   'case.verify',
+  'incident.split',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

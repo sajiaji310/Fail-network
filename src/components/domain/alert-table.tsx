@@ -33,6 +33,10 @@ export type AlertTableProps = {
   onSelectDevice?: (deviceId: string) => void;
   /** 行点击：告警流页面跳到事件详情用 */
   incidentHrefOf?: (row: AlertTableRow) => string | null;
+  /** 勾选模式：事件详情里拆分子事件用 */
+  selectable?: boolean;
+  selectedIds?: ReadonlySet<string>;
+  onToggleRow?: (alertId: string) => void;
   emptyTitle?: string;
   emptyHint?: string;
   maxHeight?: number;
@@ -44,6 +48,9 @@ export function AlertTable({
   selectedDeviceId = null,
   onSelectDevice,
   incidentHrefOf,
+  selectable = false,
+  selectedIds,
+  onToggleRow,
   emptyTitle = '没有符合条件的告警',
   emptyHint = '换个状态或时间范围试试；也可以先注入一套故障剧本。',
   maxHeight,
@@ -60,6 +67,7 @@ export function AlertTable({
       <table className="w-full border-collapse text-[12px]">
         <thead className="sticky top-0 z-10 bg-surface-muted/85 text-left text-[10.5px] font-medium tracking-wide text-text-tertiary backdrop-blur-sm">
           <tr>
+            {selectable ? <th className="w-7 px-2 py-2.5" aria-label="选择" /> : null}
             <th className="whitespace-nowrap px-3 py-2.5">时间</th>
             <th className="whitespace-nowrap px-3 py-2.5">设备</th>
             <th className="whitespace-nowrap px-3 py-2.5">告警</th>
@@ -72,7 +80,7 @@ export function AlertTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-3 py-10 text-center">
+              <td colSpan={selectable ? 8 : 7} className="px-3 py-10 text-center">
                 <p className="text-[13px] font-medium text-text">{emptyTitle}</p>
                 <p className="mt-1 text-[12px] text-text-tertiary">{emptyHint}</p>
               </td>
@@ -81,14 +89,27 @@ export function AlertTable({
             rows.map((row) => {
               const href = incidentHrefOf?.(row) ?? null;
               const selected = selectedDeviceId === row.deviceId;
+              const checked = selectedIds?.has(row.id) ?? false;
               return (
                 <tr
                   key={row.id}
                   className={cn(
                     'border-t border-border/70 align-middle transition-colors',
                     selected ? 'bg-primary-soft' : 'hover:bg-surface-muted/60',
+                    checked && 'bg-warn-soft/60',
                   )}
                 >
+                  {selectable ? (
+                    <td className="px-2 py-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onToggleRow?.(row.id)}
+                        aria-label={`选择告警 ${row.deviceName} ${row.type}`}
+                        className="size-3.5 cursor-pointer accent-primary"
+                      />
+                    </td>
+                  ) : null}
                   <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] text-text-secondary">
                     <time
                       dateTime={row.firstSeen}

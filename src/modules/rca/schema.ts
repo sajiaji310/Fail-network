@@ -92,6 +92,19 @@ export const AnalysisMetaSchema = z.object({
   }),
   trim: z.array(z.string()).default([]),
   degradedReason: z.string().nullable().default(null),
+  /** 本次研判的 token 用量：评测要算成本，缓存命中时也要能读回来 */
+  tokensUsed: z.number().nullable().optional(),
+  /** 研判时的拓扑完整度（评审 P0-4）：缺拓扑时置信度已按上限下调，事后可复核 */
+  topology: z
+    .object({
+      level: z.enum(['FULL', 'PARTIAL', 'MISSING']),
+      deviceCount: z.number(),
+      linkedDevices: z.number(),
+      isolatedDevices: z.number(),
+      components: z.number(),
+      maxHops: z.number().optional(),
+    })
+    .optional(),
 });
 
 export type AnalysisMeta = z.infer<typeof AnalysisMetaSchema>;

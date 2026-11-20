@@ -30,6 +30,14 @@ export const EvalCaseSchema = z.object({
       removeLinks: z.array(z.string()).default([]),
     })
     .default({ removeLinks: [] }),
+  /**
+   * 分批到达的切分点（分钟偏移）。空数组 = 一次性注入后聚合（默认）。
+   *
+   * 为什么需要：告警周期规则会把静默 30 分钟后的同指纹上报判为"新周期"，
+   * 一次性注入时旧周期行在聚合前就被 RESOLVED 了，跨窗口收敛根本没机会发生。
+   * 按波次入库 + 每波聚合一次，才是真实的连续运行方式。
+   */
+  waves: z.array(z.number().int().min(1).max(239)).default([]),
   expect: z.object({
     /** 业务上应该聚成几个事件 */
     incidents: z.number().int().min(0),

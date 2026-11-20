@@ -1,0 +1,81 @@
+{
+  "id": "dev-17",
+  "set": "dev",
+  "kind": "ADVERSARIAL",
+  "title": "长期悬挂：同一光模块 40 分钟后再次上报",
+  "note": "考二次收敛：同指纹在告警周期外重报，且第二波带着新的伴随告警（指纹集合不同，B8 兜不住）；原事件未结案时必须并回，而不是再开一张工单",
+  "waves": [30],
+  "scenario": {
+    "name": "dev-hanging-optical",
+    "title": "上联光模块持续劣化，跨周期反复上报",
+    "description": "ACC-SW-07 上联光模块劣化未恢复，40 分钟后同一收光告警再次上报，并带出新的时延与 CRC 告警。",
+    "rootCauseHint": "ACC-SW-07 上联光模块收光功率不足，故障一直未恢复",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -19.4,
+        "threshold": -16,
+        "message": "收光功率 -19.4dBm，低于门限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "LINK_DOWN",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "count": 3,
+        "message": "上联端口 3 次 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 5.8,
+        "threshold": 1,
+        "message": "上联丢包率 5.8%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -20.1,
+        "threshold": -16,
+        "message": "收光功率进一步降到 -20.1dBm（新周期）",
+        "minuteFromStart": 40
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 210,
+        "threshold": 50,
+        "message": "到网关时延 210ms",
+        "minuteFromStart": 41
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "CRC_ERROR",
+        "severity": "P2",
+        "metric": "Ten-GigabitEthernet1/0/12",
+        "value": 260,
+        "threshold": 100,
+        "message": "对端端口 CRC 错误 260 个/5min",
+        "minuteFromStart": 42
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "LINK", "device": "ACC-SW-07" },
+    "rootAlert": { "device": "ACC-SW-07", "type": "OPTICAL_RX_LOW" }
+  }
+}

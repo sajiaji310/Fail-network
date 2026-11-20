@@ -55,16 +55,39 @@
 
 ## 事件
 
-| Method | Path                                               | 说明                   | 备注                                                                                                                         |
-| ------ | -------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/v1/incidents`                                | 事件列表               | `?status=&severity=&page=&pageSize=`                                                                                         |
-| GET    | `/api/v1/incidents/[id]`                           | 事件详情               | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline |
-| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）        | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                    |
-| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08） | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                      |
-| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）    | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                    |
-| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）    | 返回 `text/markdown`；没生成过则 404                                                                                         |
-| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）         | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE                                                          |
-| POST   | `/api/v1/correlation/run`                          | 手动触发聚合           | body `{now?}`；返回 `{created, updated, reopened, merged}`                                                                   |
+| Method | Path                                               | 说明                   | 备注                                                                                                                                    |
+| ------ | -------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/incidents`                                | 事件列表               | `?status=&severity=&page=&pageSize=`                                                                                                    |
+| GET    | `/api/v1/incidents/[id]`                           | 事件详情               | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline / topology |
+| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）        | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                               |
+| POST   | `/api/v1/incidents/[id]/split`                     | 事件拆分（人工纠错）   | body `{alertIds:[...], note?}`；见下节                                                                                                  |
+| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08） | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                                 |
+| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）    | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                               |
+| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）    | 返回 `text/markdown`；没生成过则 404                                                                                                    |
+| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）         | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE                                                                     |
+| POST   | `/api/v1/correlation/run`                          | 手动触发聚合           | body `{now?}`；返回 `{created, updated, reopened, converged, merged}`                                                                   |
+
+事件详情的 `topology` 字段（评审 P0-4）：
+
+```jsonc
+{
+  "level": "PARTIAL", // FULL | PARTIAL | MISSING
+  "deviceCount": 5,
+  "linkedDevices": 4,
+  "isolatedDevices": [{ "id": "cm...", "name": "AGG-SW-04" }],
+  "linkCount": 6,
+  "components": 1,
+  "maxHops": 3, // 事件设备间最大跳数，>2 视为可能缺链
+  "ratio": 0.8,
+  "topologyNote": "1 台设备没有链路记录（AGG-SW-04）。结论按候选排序展示，置信度已按完整度下调。",
+}
+```
+
+`converged` 是二次收敛的结果（同指纹跨告警周期重报，并回未结案的原事件）：
+
+```jsonc
+{ "id": "cm...", "code": "INC-20261120-001", "added": 3, "gapMinutes": 40 }
+```
 
 ### PATCH /api/v1/incidents/[id] — 状态机
 
@@ -97,6 +120,30 @@
 
 结案（`to=RESOLVED`）的副作用：写 `resolvedAt / mttrSeconds / closedReason=MANUAL / closure`，
 并在事务外沉淀 `CaseRecord` 与 `Report`（失败进 `warnings`，不阻塞结案）。
+
+### POST /api/v1/incidents/[id]/split — 事件拆分
+
+自动聚合判错时的人工纠正入口。选中的告警移到新建事件，原事件重算聚合字段。
+
+```jsonc
+// 请求
+{ "alertIds": ["cm...", "cm..."], "note": "这两条是换线余波" }
+
+// 200
+{
+  "source": { "id": "cm...", "code": "INC-20261120-001", "alertCount": 19 },
+  "target": { "id": "cm...", "code": "INC-20261120-002", "alertCount": 3 },
+  "moved": 3
+}
+```
+
+约束与语义：
+
+- 至少选 1 条，且**不能把全部告警拆走**（原事件不能变成空壳）→ 400。
+- 告警不属于该事件 → 400，且不改动任何数据。
+- 已结案（`RESOLVED/CLOSED`）→ 409，需先重开。
+- 新事件带 `splitFromId`，聚合的合并阶段会跳过这对组合 —— 人工判断不会被下一轮自动合并推翻。
+- 原事件 `statusLog` 追加一条「拆分 N 条告警到 INC-…」，审计表记 `incident.split`。
 
 ## 案例
 
@@ -140,6 +187,7 @@
 | `correlation.run`     | `POST /api/v1/correlation/run`                  |
 | `report.generate`     | `POST /api/v1/incidents/[id]/report`            |
 | `case.verify`         | `PATCH /api/v1/cases/[id]`                      |
+| `incident.split`      | `POST /api/v1/incidents/[id]/split`             |
 
 `actor` 记 `local` 或 `api-key:…<尾4位>`；**不记请求体**，`detail` 只含路由显式声明的小字段。
 审计写入失败只降级成一条 warn 日志，不影响业务结果 —— 宁可少一条记录，不能因为审计挂了就让结案失败。

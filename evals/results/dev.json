@@ -2,11 +2,11 @@
   "meta": {
     "set": "dev",
     "mode": "fallback",
-    "startedAt": "2026-11-19T16:31:40.774Z",
-    "durationMs": 1443
+    "startedAt": "2026-11-20T14:20:10.962Z",
+    "durationMs": 2118
   },
   "agg": {
-    "total": 16,
+    "total": 17,
     "byKind": {
       "POSITIVE": {
         "total": 6,
@@ -19,25 +19,58 @@
         "top3": 5
       },
       "ADVERSARIAL": {
-        "total": 5,
-        "top1": 4,
-        "top3": 4
+        "total": 6,
+        "top1": 5,
+        "top3": 5
       }
     },
-    "top1Rate": 0.857,
-    "top3Rate": 0.929,
+    "compressionByKind": {
+      "POSITIVE": 10,
+      "DISTRACTOR": 8.8,
+      "ADVERSARIAL": 5.6
+    },
+    "top1Rate": 0.867,
+    "top3Rate": 0.933,
     "precision": 1,
     "recall": 1,
-    "compression": 8.4,
+    "compression": 8.25,
     "compressionOnPositive": 10,
-    "answerable": 14,
-    "precisionDenominator": 14,
-    "rootAlertTotal": 14,
+    "handlingUnits": 20,
+    "orphanAlerts": 4,
+    "compressionOnUserLoad": 6.6,
+    "compressionCeiling": 8.25,
+    "compressionEfficiency": 1,
+    "topology": {
+      "full": {
+        "total": 14,
+        "answerable": 13,
+        "top1": 12,
+        "top3": 13,
+        "alerts": 114,
+        "incidents": 14,
+        "compression": 8.143
+      },
+      "degraded": {
+        "total": 2,
+        "answerable": 2,
+        "top1": 1,
+        "top3": 1,
+        "alerts": 16,
+        "incidents": 2,
+        "compression": 8
+      }
+    },
+    "answerable": 15,
+    "precisionDenominator": 15,
+    "rootAlertTotal": 15,
     "suppressionErrors": 0,
+    "criticalSuppressions": 0,
     "evidenceRate": 1,
-    "avgDurationMs": 21,
+    "avgDurationMs": 28,
+    "p95DurationMs": 98,
+    "totalTokens": 0,
     "fallbackRate": 1,
-    "passed": 15
+    "passed": 16
   },
   "scores": [
     {
@@ -60,9 +93,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 67,
+      "durationMs": 98,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -85,9 +122,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 31,
+      "durationMs": 43,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -110,9 +151,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 10,
       "validEvidence": 10,
-      "durationMs": 17,
+      "durationMs": 45,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -135,9 +180,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 17,
+      "durationMs": 22,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "PARTIAL",
       "failures": []
     },
     {
@@ -160,9 +209,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 30,
+      "durationMs": 22,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -185,9 +238,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 17,
+      "durationMs": 19,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -210,9 +267,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 18,
+      "durationMs": 23,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 2,
+      "handlingUnits": 3,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -235,9 +296,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 26,
+      "durationMs": 19,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -260,9 +325,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 10,
       "validEvidence": 10,
-      "durationMs": 16,
+      "durationMs": 42,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -285,9 +354,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 16,
+      "durationMs": 20,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -310,9 +383,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 16,
+      "durationMs": 20,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -338,6 +415,10 @@
       "durationMs": 0,
       "source": null,
       "dropped": 0,
+      "orphanAlerts": 2,
+      "handlingUnits": 2,
+      "tokens": 0,
+      "topologyLevel": null,
       "failures": []
     },
     {
@@ -360,9 +441,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 13,
+      "durationMs": 17,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "PARTIAL",
       "failures": [
         "Top3 未命中标注根因"
       ]
@@ -387,9 +472,13 @@
       "hypothesisTotal": 0,
       "rawEvidence": 0,
       "validEvidence": 0,
-      "durationMs": 10,
+      "durationMs": 12,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -412,9 +501,13 @@
       "hypothesisTotal": 3,
       "rawEvidence": 9,
       "validEvidence": 9,
-      "durationMs": 12,
+      "durationMs": 18,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     },
     {
@@ -437,9 +530,42 @@
       "hypothesisTotal": 2,
       "rawEvidence": 6,
       "validEvidence": 6,
-      "durationMs": 13,
+      "durationMs": 15,
       "source": "RULE_FALLBACK",
       "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
+      "failures": []
+    },
+    {
+      "id": "dev-17",
+      "kind": "ADVERSARIAL",
+      "title": "长期悬挂：同一光模块 40 分钟后再次上报",
+      "note": "考二次收敛：同指纹在告警周期外重报，且第二波带着新的伴随告警（指纹集合不同，B8 兜不住）；原事件未结案时必须并回，而不是再开一张工单",
+      "alertTotal": 6,
+      "incidentTotal": 1,
+      "expectIncidents": 1,
+      "precision": 1,
+      "recall": 1,
+      "deviceCovered": true,
+      "rootAlertSuppressed": false,
+      "top1": true,
+      "top3": true,
+      "emptyCorrect": false,
+      "emptyButExpectedAnswer": false,
+      "expectAnswer": true,
+      "hypothesisTotal": 2,
+      "rawEvidence": 6,
+      "validEvidence": 6,
+      "durationMs": 17,
+      "source": "RULE_FALLBACK",
+      "dropped": 0,
+      "orphanAlerts": 0,
+      "handlingUnits": 1,
+      "tokens": 0,
+      "topologyLevel": "FULL",
       "failures": []
     }
   ]

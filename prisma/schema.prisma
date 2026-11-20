@@ -163,6 +163,8 @@ model Incident {
   clusterKey     String?        @unique // sha1(排序后的 fingerprintId)
   mergedIntoId   String? // B3 被并入的目标事件
   reopenedFromId String? // B6 重开自哪个事件
+  /// 人工拆分来源：拆分出的新事件指回原事件，聚合合并时跳过这对组合
+  splitFromId    String?
   reopenedCount  Int            @default(0)
   closedReason   String? // MANUAL | AUTO_MERGED | AUTO_NOISE | AUTO_CLOSED
   /// 研判审计：{ analyzedAt, source, model, missingInfo, verify:{dropped,stats} }

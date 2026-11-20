@@ -20,6 +20,7 @@ import type {
   ContextNode,
 } from './context-types';
 import { isCaseRelevant } from './relevance';
+import { assessTopology } from '@/modules/topology/completeness';
 
 export type {
   ContextAlert,
@@ -197,6 +198,10 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
     metrics,
     changes,
     cases,
+    topology: assessTopology(
+      nodes.map((n) => ({ id: n.id, name: n.name })),
+      allLinks,
+    ),
     graph,
     trim: { trimmed: [], chars: 0 },
   };

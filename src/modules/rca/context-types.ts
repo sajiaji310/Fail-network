@@ -1,4 +1,5 @@
 import type { DeviceGraph } from '@/modules/correlation/topology';
+import type { TopologyCoverage } from '@/modules/topology/completeness';
 import type { Severity } from '@prisma/client';
 
 /**
@@ -97,6 +98,8 @@ export type ContextBundle = {
   metrics: ContextMetric[];
   changes: ContextChange[];
   cases: ContextCase[];
+  /** 拓扑完整度：缺拓扑时 prompt 与置信度都要降级（评审 P0-4） */
+  topology: TopologyCoverage;
   /** 为校验器准备的旁路索引，不参与 prompt 渲染 */
   graph: DeviceGraph;
   trim: { trimmed: string[]; chars: number };

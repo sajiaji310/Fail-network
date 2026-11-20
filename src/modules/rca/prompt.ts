@@ -1,4 +1,5 @@
 import { deviceLayerLabel } from '@/modules/alerts/labels';
+import { TOPOLOGY_LEVEL_LABEL } from '@/modules/topology/completeness';
 import type { ContextBundle } from './context';
 
 /**
@@ -56,6 +57,14 @@ export function renderPrompt(ctx: ContextBundle): PromptPayload {
   push(
     `涉及 ${ctx.incident.deviceCount} 台设备 / ${ctx.incident.alertCount} 条告警（其中被抑制 ${ctx.incident.suppressedCount} 条）`,
   );
+  push(
+    `拓扑完整度：${TOPOLOGY_LEVEL_LABEL[ctx.topology.level]}（${ctx.topology.linkedDevices}/${ctx.topology.deviceCount} 台设备有链路记录，连通分量 ${ctx.topology.components}）`,
+  );
+  if (ctx.topology.level !== 'FULL') {
+    push(
+      `注意：拓扑不完整时不要把结论说成定论，confidence 不超过 ${ctx.topology.level === 'MISSING' ? 0.55 : 0.75}，并在 missingInfo 里写明缺了哪些设备的链路。`,
+    );
+  }
 
   push();
   push('[告警]（按严重度排序，id 可直接作为 evidence.ref）');
@@ -80,6 +89,10 @@ export function renderPrompt(ctx: ContextBundle): PromptPayload {
     push(
       `影响面设备：${ctx.nodes.map((n) => `${n.name}(${deviceLayerLabel(n.layer)})`).join('、')}`,
     );
+  } else {
+    // 空白比沉默好：不写这一行，模型会以为"没有链路"等于"没有关联"
+    push();
+    push('[拓扑] 无任何链路数据可用：无法判断设备间上下游关系，只能依据时间与告警类型归因。');
   }
 
   if (ctx.metrics.length > 0) {
