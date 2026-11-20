@@ -108,3 +108,49 @@
   - `next.config.ts` 加 `NEXT_DIST_DIR` 出口（本地绕过沙箱批量删除拦截）+ `devIndicators:false`
   - 测试 27 条：metrics 9 / report 7 / match 7 / fallback 3 / 其它内联；总 191
 - 已知未达成：告警压缩比 6.0:1（目标 8:1）、test-08 拓扑全缺失场景失败、Docker 未实机验证
+
+## 第 4 阶段：真实数据接入和规模化（T10–T14）
+
+### T10 真实数据源接入
+
+- 目标：Prometheus Alertmanager / Zabbix 至少一种能直接推告警进系统，且主机名能对上 CMDB 设备
+- 改动范围：`src/modules/ingest/sources/**`、`src/modules/ingest/resolve.ts`、`prisma/schema.prisma`（`DeviceAlias`）
+- 验收：真实 payload 的 `instance`（带端口）、Zabbix host（小写短名）都能命中设备；`resolved` 告警不建事件
+- 实际改动：
+  - `sources/classify.ts`：告警标题 → 平台类型词表（认不出来保留规范化原名，不塞 OTHER）
+  - `sources/alertmanager.ts`：v4 payload、零值 `endsAt`、纳秒时间、annotations 里的 value/threshold
+  - `sources/zabbix.ts`：单对象 / `{problems}` / 数组三种形状，severity 0–5 与文本
+  - `ingest/resolve.ts`：别名 → 设备名 → IP 三级匹配，大小写不敏感
+  - API：`POST /api/v1/ingest/{alertmanager,zabbix}`、`POST /api/v1/sources/aliases`
+  - UI：`/sources`（推送地址 + curl + 别名表 + 批次表）
+  - 测试 18 条
+
+### T11 批处理导入与批次状态
+
+- 目标：大文件不再堵住请求，批次进度可查、可恢复判断
+- 改动范围：`src/modules/ingest/batch.ts`、`prisma/schema.prisma`（`IngestBatch`）、`/api/v1/ingest/batches/**`
+- 验收：≤500 行同步返回（形状不变）；>500 行 202 + batchId；进程中断的批次被标记失败而不是永远 RUNNING
+- 实际改动：分块 200 行 + 每块写进度并让出事件循环；`sweep` 清理假 RUNNING；测试 3 条
+
+### T12 指标快照与时序证据
+
+- 目标：结论不只依赖告警瞬时值，能看到"爬升还是尖刺"
+- 改动范围：`src/modules/metrics/**`、`src/modules/rca/{context,context-types,prompt,verify}.ts`、`prisma/schema.prisma`（`MetricSample`）
+- 验收：采样幂等；事件窗口内出首末/峰谷/斜率；`METRIC` 证据能通过 L1，伪造 ref 被丢弃
+- 实际改动：`POST /api/v1/metrics/samples`、`GET /api/v1/metrics`；prompt 增加趋势行；
+  `EvidenceType` 增 `METRIC`，L2 要求设备在影响面 ≤2 跳；测试 7 条
+
+### T13 RBAC / 多租户 / 审计检索 / 保留策略
+
+- 目标：能交付给多人用——角色分明、数据分租户、审计可查、数据有保留期
+- 改动范围：`src/lib/{keys,rbac,auth}.ts`、`src/middleware.ts`、`src/modules/audit/service.ts`、`src/modules/system/retention.ts`
+- 验收：VIEWER 写操作 403；RESPONDER 读审计 403；`API_KEYS` 未配置时 fail-closed；保留清理默认 dry-run
+- 实际改动：多 Key 配置（兼容单 `API_KEY`）；403 `FORBIDDEN`；审计 `actor/from/to/cursor`；
+  `tenantId` 落 `Incident/CaseRecord/AuditLog/IngestBatch/MetricSample`；`POST|GET /api/v1/admin/retention` + `npm run db:retention`；测试 14 条
+
+### T14 运行指标
+
+- 目标：在真实事件上量出 MTTR、人工接受率、误抑制成本
+- 改动范围：`src/modules/ops/metrics.ts`、`/metrics` 页面
+- 验收：每个指标都能说清分母；没有数据时显示「—」而不是 0
+- 实际改动：MTTR p50/p90/avg、接受率（分母=已裁决）、误抑制率（父告警先恢复）、数据接入量级；测试 3 条

@@ -112,9 +112,12 @@ export const CHANGE_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 /** 事件结束后仍可能补录变更，留 5 分钟尾巴 */
 export const CHANGE_LOOKAHEAD_MS = 5 * 60 * 1000;
 
-export async function getIncidentDetail(idOrCode: string): Promise<IncidentDetail | null> {
+export async function getIncidentDetail(
+  idOrCode: string,
+  tenantId = 'default',
+): Promise<IncidentDetail | null> {
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: idOrCode }, { code: idOrCode }] },
+    where: { tenantId, OR: [{ id: idOrCode }, { code: idOrCode }] },
     select: {
       id: true,
       code: true,

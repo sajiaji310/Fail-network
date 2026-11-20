@@ -65,6 +65,9 @@ model Device {
   ip        String?
   site      String?
   layer     Int        @default(3) // 1 核心 2 汇聚 3 接入
+  /// 租户隔离的根：告警、指标都挂在设备上，设备归属哪个租户，
+  /// 由它派生的告警/事件就属于哪个租户。设备名仍保持全局唯一（见 STATE 已知偏差）。
+  tenantId  String     @default("default")
   createdAt DateTime   @default(now())
 
   fingerprints AlertFingerprint[]
@@ -72,8 +75,103 @@ model Device {
   linksFrom    TopologyLink[]     @relation("src")
   linksTo      TopologyLink[]     @relation("dst")
   services     ServiceDevice[]
+  aliases      DeviceAlias[]
+  metrics      MetricSample[]
 
   @@index([type, site])
+  @@index([tenantId])
+}
+
+/// 真实数据源的主机标识 → 平台设备。
+///
+/// Prometheus 的 `instance` 是 `10.1.0.1:9100`，Zabbix 的 `host` 是 `core-sw-01`，
+/// 而我们库里的设备名是 `CORE-SW-01`。没有这层映射，接进来的告警全部会落到
+/// "设备不存在"，真实接入就永远只能演示。别名优先于设备名匹配，且大小写不敏感
+/// 由调用方归一化（库里存归一化后的形式）。
+model DeviceAlias {
+  id        String   @id @default(cuid())
+  alias     String   @unique
+  deviceId  String
+  /// 来源：ALERTMANAGER / ZABBIX / MANUAL，用于排查"这条映射是谁加的"
+  source    String   @default("MANUAL")
+  note      String?
+  createdAt DateTime @default(now())
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+}
+
+/// 指标快照（评审第 4 阶段「避免只依赖告警瞬时值」）。
+///
+/// 有意不做成时序数据库：只保留事件窗口内够用的采样点（首值/末值/峰值/斜率），
+/// 保留期由 `retention.metricDays` 控制。真要长期存储与降采样，接 Prometheus 自己更合适。
+model MetricSample {
+  id       String   @id @default(cuid())
+  deviceId String
+  /// 指标名，如 cpu.util / link.in_bps / loss.rate
+  metric   String
+  value    Float
+  unit     String?
+  at       DateTime
+  source   String   @default("push")
+  labels   Json?
+  tenantId String   @default("default")
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  /// 幂等：同一设备同一指标同一时刻同一来源只留一条（上游重试不会把曲线拉高）
+  @@unique([deviceId, metric, at, source])
+  @@index([deviceId, metric, at])
+  @@index([at])
+}
+
+enum IngestBatchStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// 导入批次（评审第 4 阶段「导入改为批处理/异步任务，提供批次状态」）。
+///
+/// 批次状态落库而不是只放内存：用户刷新页面之后仍要能看到"上一批 3 万条跑到哪了"，
+/// 内存队列做不到这一点。进程只负责推进，状态是库里的。
+model IngestBatch {
+  id                 String            @id @default(cuid())
+  source             String
+  /// 适配器：json / csv / alertmanager / zabbix
+  kind               String            @default("json")
+  status             IngestBatchStatus @default(QUEUED)
+  total              Int               @default(0)
+  processed          Int               @default(0)
+  accepted           Int               @default(0)
+  deduped            Int               @default(0)
+  suppressed         Int               @default(0)
+  retroSuppressed    Int               @default(0)
+  autoClosedIncidents Int              @default(0)
+  failed             Int               @default(0)
+  /// 只留前 200 条，避免一个坏文件把行撑到几 MB
+  issues             Json?
+  error              String?
+  tenantId           String            @default("default")
+  createdBy          String?
+  createdAt          DateTime          @default(now())
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  durationMs         Int?
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// 租户（评审第 4 阶段「多租户」）。
+///
+/// MVP 单部署默认只有 `default` 一个租户；表存在的意义是让 API Key 能指向一个
+/// 真实存在的租户，而不是靠字符串约定。
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
 }
 
 model TopologyLink {
@@ -178,6 +276,9 @@ model Incident {
   slaMinutes     Int?
   reopenedCount  Int            @default(0)
   closedReason   String? // MANUAL | AUTO_MERGED | AUTO_NOISE | AUTO_CLOSED
+  /// 租户快照：由事件内设备的 tenantId 推出，落下来是为了列表/看板能一次过滤，
+  /// 不必每次 join 设备表（设备后续改租户不追溯历史事件）
+  tenantId       String         @default("default")
   /// 研判审计：{ analyzedAt, source, model, missingInfo, verify:{dropped,stats} }
   /// 文档 10.3 要求"校验结果要落库，用于 eval 与事后审计"，但 8 节模型缺此字段，T07 补
   analysisMeta   Json?
@@ -194,6 +295,7 @@ model Incident {
 
   @@index([status, startedAt])
   @@index([severity])
+  @@index([tenantId, status, startedAt])
   /// 概览页「未接手」队列与超时判定都按这两列过滤
   @@index([assignee, status])
   @@index([claimedAt])
@@ -292,11 +394,13 @@ model CaseRecord {
   verifyNote   String?
   /// P1: pgvector vector(1536)，MVP 本地无扩展故留空
   embedding    String?
+  tenantId     String           @default("default")
   createdAt    DateTime         @default(now())
   incident     Incident         @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@index([title])
   @@index([verification, createdAt])
+  @@index([tenantId, createdAt])
 }
 
 /// 操作审计（评审第 1 阶段「审计日志」）。
@@ -320,9 +424,11 @@ model AuditLog {
   detail    Json?
   requestId String?
   ip        String?
+  tenantId  String   @default("default")
 
   @@index([at])
   @@index([action, at])
+  @@index([tenantId, at])
 }
 
 model Report {

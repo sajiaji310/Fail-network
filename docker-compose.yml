@@ -37,6 +37,8 @@ services:
       # —— 安全边界（P0）：production 才强制 API Key，local 放行 ——
       APP_ENV: ${APP_ENV:-local}
       API_KEY: ${API_KEY:-}
+      # 多 Key + RBAC：JSON 数组字符串，留空则退回上面的单 API_KEY（ADMIN + default 租户）
+      API_KEYS: ${API_KEYS:-}
     env_file: [.env]
     depends_on:
       db: { condition: service_healthy }

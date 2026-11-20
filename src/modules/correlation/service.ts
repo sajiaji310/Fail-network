@@ -233,6 +233,12 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
 
     let code = await nextIncidentCode(firstSeen);
     const severity = maxSeverity(cluster.alerts.map((a) => a.severity));
+    // 事件租户由其告警所属设备决定（设备是租户隔离的根）
+    const owner = await db.alertFingerprint.findFirst({
+      where: { id: { in: fingerprintIds } },
+      select: { device: { select: { tenantId: true } } },
+    });
+    const tenantId = owner?.device.tenantId ?? 'default';
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const created = await db.incident.create({
@@ -245,6 +251,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
             lastSeen,
             clusterKey,
             reopenedFromId: reopenedFromId ?? null,
+            tenantId,
             // 响应目标在这里快照：策略以后收紧，不该把历史事件追溯判成超时
             slaMinutes: slaMinutesOf({ severity, slaMinutes: null }),
           },

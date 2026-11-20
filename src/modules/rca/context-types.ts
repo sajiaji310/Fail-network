@@ -48,12 +48,32 @@ export type ContextLink = {
 };
 
 export type ContextMetric = {
+  /**
+   * 证据引用：`metric:<设备名>:<指标>`。
+   * 用可读的复合键而不是采样点 id：模型引用的是"这条曲线"，不是某个 5 秒采样。
+   */
+  ref: string;
   deviceId: string;
   deviceName: string;
   metric: string;
   value: number | null;
   threshold: number | null;
+  /** 单位（% / ms / Mbps）；告警自带的瞬时值没有单位信息时为 null */
+  unit: string | null;
   at: string;
+  /** ALERT=告警自带的瞬时值；SAMPLE=指标快照（有 trend） */
+  source: 'ALERT' | 'SAMPLE';
+  /** 采样趋势：只有存在指标快照时才有，没有采样就不该让模型谈趋势 */
+  trend?: {
+    samples: number;
+    first: number;
+    last: number;
+    min: number;
+    max: number;
+    slopePerMin: number;
+    from: string;
+    to: string;
+  };
 };
 
 export type ContextChange = {

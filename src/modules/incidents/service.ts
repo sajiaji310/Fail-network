@@ -25,6 +25,8 @@ export type IncidentListQuery = {
   queue?: IncidentQueue;
   page: number;
   pageSize: number;
+  /** 租户范围；不传按 default（控制台是单租户视图，API 调用方由 Key 决定） */
+  tenantId?: string;
 };
 
 export type IncidentListItem = {
@@ -76,6 +78,7 @@ function queueFilter(queue: IncidentQueue): Prisma.IncidentWhereInput {
 
 export async function listIncidents(query: IncidentListQuery): Promise<IncidentListResult> {
   const where: Prisma.IncidentWhereInput = {
+    tenantId: query.tenantId ?? 'default',
     ...(query.status?.length ? { status: { in: query.status } } : {}),
     ...(query.severity?.length ? { severity: { in: query.severity } } : {}),
     ...(query.queue ? queueFilter(query.queue) : {}),
@@ -204,10 +207,14 @@ export type IncidentStats = {
   unanalyzed: number;
 };
 
-export async function getIncidentStats(now: Date = new Date()): Promise<IncidentStats> {
+export async function getIncidentStats(
+  now: Date = new Date(),
+  tenantId = 'default',
+): Promise<IncidentStats> {
+  const scope = { tenantId };
   const [active, closed, total, last24h, awaitingConfirm, unanalyzed] = await Promise.all([
     db.incident.findMany({
-      where: { status: { in: ACTIVE_STATUSES } },
+      where: { ...scope, status: { in: ACTIVE_STATUSES } },
       // 活跃事件数量天然有限（一次故障一个），取全字段在内存里判时限，
       // 比在 SQL 里按严重级拼四条 OR 更不容易和 assessResponse 判歪
       select: {
@@ -219,16 +226,21 @@ export async function getIncidentStats(now: Date = new Date()): Promise<Incident
         assignee: true,
       },
     }),
-    db.incident.count({ where: { status: { in: ['RESOLVED', 'CLOSED'] } } }),
-    db.incident.count(),
-    db.incident.count({ where: { startedAt: { gte: new Date(now.getTime() - 24 * 3600_000) } } }),
+    db.incident.count({ where: { ...scope, status: { in: ['RESOLVED', 'CLOSED'] } } }),
+    db.incident.count({ where: scope }),
+    db.incident.count({
+      where: { ...scope, startedAt: { gte: new Date(now.getTime() - 24 * 3600_000) } },
+    }),
     db.incident.count({
       where: {
+        ...scope,
         status: { in: ACTIVE_STATUSES },
         hypotheses: { some: {}, none: { verdict: 'ACCEPTED' } },
       },
     }),
-    db.incident.count({ where: { status: { in: ACTIVE_STATUSES }, hypotheses: { none: {} } } }),
+    db.incident.count({
+      where: { ...scope, status: { in: ACTIVE_STATUSES }, hypotheses: { none: {} } },
+    }),
   ]);
 
   let unassigned = 0;

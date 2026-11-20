@@ -6,7 +6,16 @@
 import { loadEnvFile } from 'node:process';
 import { PrismaClient } from '@prisma/client';
 import { SLA_TARGET_MINUTES } from '../src/modules/incidents/sla';
-import { ACC_NAMES, AGG_NAMES, CASES, DEVICES, ONCALL, SERVICES } from './seed-data';
+import {
+  ACC_NAMES,
+  AGG_NAMES,
+  ALIASES,
+  CASES,
+  DEVICES,
+  METRIC_SERIES,
+  ONCALL,
+  SERVICES,
+} from './seed-data';
 
 try {
   loadEnvFile('.env');
@@ -111,6 +120,68 @@ async function seedServices() {
   }
 }
 
+/** 默认租户：API Key 的 tenant 字段要指向一个真实存在的行，而不是靠字符串约定 */
+async function seedTenant() {
+  await db.tenant.upsert({
+    where: { id: 'default' },
+    create: { id: 'default', name: '默认租户' },
+    update: { name: '默认租户' },
+  });
+}
+
+async function seedAliases() {
+  for (const a of ALIASES) {
+    const device = await db.device.findUnique({ where: { name: a.device }, select: { id: true } });
+    if (!device) {
+      console.warn(`[seed] 别名跳过（设备不存在）：${a.alias} → ${a.device}`);
+      continue;
+    }
+    await db.deviceAlias.upsert({
+      where: { alias: a.alias },
+      create: { alias: a.alias, deviceId: device.id, source: a.source, note: a.note },
+      update: { deviceId: device.id, source: a.source, note: a.note },
+    });
+  }
+}
+
+/**
+ * 指标采样：最近 6 小时、每 15 分钟一个点，值随时间线性爬升。
+ *
+ * 时间戳按 15 分钟对齐再写入（唯一键含 at），因此同一刻内重复执行种子不会堆点；
+ * 但跨过整点后重跑会补出新的窗口 —— 指标本来就是时间相对的，这点和「案例用固定基准日」
+ * 不同，刻意如此。
+ */
+async function seedMetrics() {
+  const stepMs = 15 * 60_000;
+  const lastBucket = Math.floor(Date.now() / stepMs) * stepMs;
+  const points = 25;
+
+  for (const series of METRIC_SERIES) {
+    const device = await db.device.findUnique({
+      where: { name: series.device },
+      select: { id: true },
+    });
+    if (!device) continue;
+
+    const rows = Array.from({ length: points }, (_, index) => {
+      const at = new Date(lastBucket - (points - 1 - index) * stepMs);
+      // 叠加一点确定性波动，避免曲线是完美直线（否则看不出"斜率"这件事的意义）
+      const wave = Math.sin(index / 3) * series.step * 0.6;
+      return {
+        deviceId: device.id,
+        metric: series.metric,
+        value: Math.round((series.base + series.step * index + wave) * 100) / 100,
+        unit: series.unit,
+        at,
+        source: 'seed',
+        tenantId: 'default',
+      };
+    });
+
+    await db.metricSample.createMany({ data: rows, skipDuplicates: true });
+  }
+}
+
 async function seedCases() {
   const seqByDay = new Map<string, number>();
 
@@ -194,29 +265,41 @@ async function seedCases() {
 
 async function main() {
   console.log('[seed] 开始…');
+  await seedTenant();
   await seedDevices();
   await seedLinks();
   await seedServices();
+  await seedAliases();
+  await seedMetrics();
   await seedCases();
 
-  const [devices, links, incidents, cases, services, byLayer] = await Promise.all([
-    db.device.count(),
-    db.topologyLink.count(),
-    db.incident.count(),
-    db.caseRecord.count(),
-    db.service.count(),
-    db.device.groupBy({ by: ['layer'], _count: { _all: true }, orderBy: { layer: 'asc' } }),
-  ]);
+  const [devices, links, incidents, cases, services, aliases, samples, byLayer] = await Promise.all(
+    [
+      db.device.count(),
+      db.topologyLink.count(),
+      db.incident.count(),
+      db.caseRecord.count(),
+      db.service.count(),
+      db.deviceAlias.count(),
+      db.metricSample.count(),
+      db.device.groupBy({ by: ['layer'], _count: { _all: true }, orderBy: { layer: 'asc' } }),
+    ],
+  );
 
   console.log(
-    `[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases} · 服务 ${services}`,
+    `[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases} · 服务 ${services} · 别名 ${aliases} · 指标采样 ${samples}`,
   );
   console.log(
     `[seed] 层级分布 ${byLayer.map((g) => `L${g.layer}:${g._count._all}`).join(' / ')}（期望 L1:1 / L2:4 / L3:25）`,
   );
-  console.log('[seed] 期望基线 30 / 60 / 30 / 30 / 6');
+  console.log('[seed] 期望基线 30 / 60 / 30 / 30 / 6 / 4');
 
-  const ok = devices === 30 && links === 60 && cases === 30 && services === SERVICES.length;
+  const ok =
+    devices === 30 &&
+    links === 60 &&
+    cases === 30 &&
+    services === SERVICES.length &&
+    aliases === ALIASES.length;
   if (!ok) {
     console.error('[seed] 数量与基线不一致，检查 upsert 唯一键');
     process.exitCode = 1;

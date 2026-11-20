@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { actorOf, tenantOf } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { toErrorBody, AppError } from '@/lib/errors';
 import { readTextLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
+import { submitIngest } from '@/modules/ingest/batch';
 import { parseCsv } from '@/modules/ingest/parsers/csv';
 import { parseJson } from '@/modules/ingest/parsers/json';
 import { IngestCsvBodySchema, IngestJsonBodySchema } from '@/modules/ingest/schema';
-import { ingestAlerts } from '@/modules/ingest/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,16 +65,43 @@ export async function POST(req: Request) {
       throw new AppError('VALIDATION_FAILED', '没有可导入的告警行', parse.issues.slice(0, 20));
     }
 
-    const result = await audited(
+    const outcome = await audited(
       req,
       {
         action: 'alert.ingest',
         target: source,
         detail: { rows: parse.rows.length },
+        detailOf: (value) => ({ mode: value.mode }),
         requestId: traceId,
       },
-      () => ingestAlerts(source, parse.rows),
+      () =>
+        submitIngest({
+          source,
+          kind:
+            contentType.includes('text/csv') || contentType.includes('text/plain') ? 'csv' : 'json',
+          alerts: parse.rows,
+          tenantId: tenantOf(req),
+          createdBy: actorOf(req),
+        }),
     );
+
+    if (outcome.mode === 'async') {
+      log.info('ingest_queued', { traceId, source, rows: parse.rows.length });
+      return NextResponse.json(
+        {
+          mode: 'async',
+          batchId: outcome.batchId,
+          total: outcome.total,
+          issues: parse.issues.slice(0, 50),
+        },
+        {
+          status: 202,
+          headers: { 'x-trace-id': traceId, 'x-batch-id': outcome.batchId },
+        },
+      );
+    }
+
+    const result = outcome.result;
     const issues = [...parse.issues, ...result.issues].slice(0, 50);
 
     log.info('ingest_done', {
@@ -85,7 +113,10 @@ export async function POST(req: Request) {
       failed: result.failed,
     });
 
-    return NextResponse.json({ ...result, issues }, { headers: { 'x-trace-id': traceId } });
+    return NextResponse.json(
+      { mode: 'sync', ...result, issues },
+      { headers: { 'x-trace-id': traceId } },
+    );
   } catch (error) {
     const { status, body } = toErrorBody(error);
     log.error('ingest_failed', { traceId, err: String(error) });

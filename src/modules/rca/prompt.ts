@@ -16,7 +16,7 @@ export const PROMPT_VERSION = 'rca-1.0';
 export const SYSTEM_PROMPT = `你是资深网络运维专家，负责根据告警、拓扑、变更与历史案例定位故障根因。
 
 硬性规则：
-1. evidence.ref 只能填写下方清单中出现过的 ID（告警/变更/链路/案例），不得编造，不得使用设备名代替 ID。
+1. evidence.ref 只能填写下方清单中出现过的 ID（告警/变更/链路/案例/指标），不得编造，不得使用设备名代替 ID。
 2. 每条假设至少引用 1 条真实证据；没有证据支撑的猜测不要输出。
 3. 最多输出 3 条假设，按可能性从高到低排列，confidence 取 0~1。
 4. 因果方向：下游设备告警不能推导出上游故障；晚于首个告警的变更不能作为原因。
@@ -32,7 +32,7 @@ JSON 结构（字段名与枚举值必须完全一致）：
       "cause": "根因描述，4~120字",
       "category": "HARDWARE|CONFIG|LINK|CAPACITY|UPSTREAM|OTHER",
       "confidence": 0.0,
-      "evidence": [{ "type": "ALERT|CHANGE|TOPOLOGY|CASE", "ref": "真实ID", "desc": "<=160字" }],
+      "evidence": [{ "type": "ALERT|CHANGE|TOPOLOGY|CASE|METRIC", "ref": "真实ID", "desc": "<=160字" }],
       "verifySteps": ["现场验证动作，1~5条"],
       "actions": [{ "action": "处置动作", "risk": "LOW|MEDIUM|HIGH", "requiresApproval": true }]
     }
@@ -97,10 +97,23 @@ export function renderPrompt(ctx: ContextBundle): PromptPayload {
 
   if (ctx.metrics.length > 0) {
     push();
-    push('[指标]（仅告警上报时刻的快照，无时间序列，不要当趋势使用）');
+    const hasTrend = ctx.metrics.some((m) => m.trend);
+    push(
+      hasTrend
+        ? '[指标]（ref 可作 evidence.ref，type 填 METRIC；带"趋势"的来自指标快照采样，没有趋势的只是告警瞬时值）'
+        : '[指标]（仅告警上报时刻的快照，无时间序列，不要当趋势使用）',
+    );
     for (const m of ctx.metrics) {
+      const base = `- ${m.ref} | ${m.deviceName} ${m.metric} = ${m.value ?? '未知'}${m.threshold !== null ? `（阈值 ${m.threshold}）` : ''} @ ${m.at}`;
+      if (!m.trend) {
+        push(base);
+        continue;
+      }
+      const t = m.trend;
+      const direction = t.slopePerMin > 0 ? '上升' : t.slopePerMin < 0 ? '下降' : '持平';
+      push(`${base}${m.unit ? ` ${m.unit}` : ''}`);
       push(
-        `- ${m.deviceName} ${m.metric} = ${m.value ?? '未知'}${m.threshold !== null ? `（阈值 ${m.threshold}）` : ''} @ ${m.at}`,
+        `  趋势：${t.samples} 点，首 ${t.first} → 末 ${t.last}，峰 ${t.max} / 谷 ${t.min}，${direction} ${Math.abs(t.slopePerMin)}/分钟（${t.from} ~ ${t.to}）`,
       );
     }
   }

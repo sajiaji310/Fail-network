@@ -7,7 +7,7 @@ import { z } from 'zod';
  * 证据校验后可能剩 0 条（AC-20），那一层用 `VerifiedResult` 表达，别混用。
  */
 
-export const EvidenceTypeSchema = z.enum(['ALERT', 'CHANGE', 'TOPOLOGY', 'CASE']);
+export const EvidenceTypeSchema = z.enum(['ALERT', 'CHANGE', 'TOPOLOGY', 'CASE', 'METRIC']);
 export const HypothesisCategorySchema = z.enum([
   'HARDWARE',
   'CONFIG',

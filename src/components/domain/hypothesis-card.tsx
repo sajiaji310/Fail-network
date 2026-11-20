@@ -23,6 +23,7 @@ const EVIDENCE_LABEL: Record<string, string> = {
   CHANGE: '变更',
   TOPOLOGY: '拓扑',
   CASE: '案例',
+  METRIC: '指标',
 };
 
 const RISK_STYLE: Record<string, string> = {

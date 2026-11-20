@@ -528,3 +528,52 @@ export const CASES: CaseSpec[] = [
     tags: ['环境', 'UPS', '断电', 'P0'],
   },
 ];
+
+/**
+ * 设备别名（第 4 阶段真实接入）：上游主机名 → 平台设备。
+ *
+ * 这几条不是凑数：Prometheus 的 `instance` 带端口、Zabbix 的 host 是小写短名，
+ * 接入页若没有现成映射示例，用户第一步就会卡在"设备不存在"。
+ */
+export type AliasSpec = { alias: string; device: string; source: string; note: string };
+
+export const ALIASES: AliasSpec[] = [
+  {
+    alias: 'core-sw-01.lab',
+    device: 'CORE-SW-01',
+    source: 'ALERTMANAGER',
+    note: '演示：Prometheus 里把核心交换机记成 FQDN',
+  },
+  {
+    alias: '10.0.0.1',
+    device: 'CORE-SW-01',
+    source: 'ALERTMANAGER',
+    note: '演示：node_exporter 的 instance 剥端口后就是设备 IP',
+  },
+  {
+    alias: 'agg-sw-01.zabbix',
+    device: 'AGG-SW-01',
+    source: 'ZABBIX',
+    note: '演示：Zabbix host 命名与 CMDB 不一致',
+  },
+  {
+    alias: 'acc-sw-07.lab',
+    device: 'ACC-SW-07',
+    source: 'MANUAL',
+    note: '演示：手工补的一条映射',
+  },
+];
+
+/** 指标采样的设备与指标组合：围绕核心与一台接入跑 6 小时 */
+export const METRIC_SERIES: {
+  device: string;
+  metric: string;
+  unit: string;
+  base: number;
+  step: number;
+}[] = [
+  { device: 'CORE-SW-01', metric: 'cpu.util', unit: '%', base: 46, step: 1.2 },
+  { device: 'CORE-SW-01', metric: 'link.in_bps', unit: 'Mbps', base: 312, step: 14.5 },
+  { device: 'AGG-SW-01', metric: 'cpu.util', unit: '%', base: 28, step: 1.1 },
+  { device: 'ACC-SW-07', metric: 'cpu.util', unit: '%', base: 19, step: 0.4 },
+];

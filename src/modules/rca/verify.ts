@@ -21,6 +21,8 @@ export type VerifyContext = {
   changes: Map<string, { deviceId: string; changedAtMs: number }>;
   links: Map<string, { sourceId: string; targetId: string }>;
   cases: Map<string, { tags: string[] }>;
+  /** 指标证据：ref 形如 `metric:<设备名>:<指标>`，只校验设备是否相关 */
+  metrics: Map<string, { deviceId: string }>;
   alertTypes: string[];
 };
 
@@ -38,6 +40,7 @@ export function buildVerifyContext(ctx: ContextBundle): VerifyContext {
     ),
     links: new Map(ctx.links.map((l) => [l.id, { sourceId: l.sourceId, targetId: l.targetId }])),
     cases: new Map(ctx.cases.map((c) => [c.id, { tags: c.tags }])),
+    metrics: new Map(ctx.metrics.map((m) => [m.ref, { deviceId: m.deviceId }])),
     alertTypes: [...new Set(ctx.alerts.map((a) => a.type))],
   };
 }
@@ -52,6 +55,8 @@ function existsInContext(ctx: VerifyContext, type: string, ref: string): boolean
       return ctx.links.has(ref);
     case 'CASE':
       return ctx.cases.has(ref);
+    case 'METRIC':
+      return ctx.metrics.has(ref);
     default:
       return false;
   }
@@ -81,6 +86,12 @@ export function isEvidenceRelevant(ctx: VerifyContext, type: string, ref: string
       const item = ctx.cases.get(ref);
       if (!item) return false;
       return isCaseRelevant(item.tags, ctx.alertTypes);
+    }
+    case 'METRIC': {
+      const metric = ctx.metrics.get(ref);
+      if (!metric) return false;
+      // 指标与告警同一条判定：设备要在影响面内（或 ≤2 跳），否则"隔壁机房的 CPU"也能当证据
+      return isDeviceRelated(metric.deviceId, ctx.incidentDeviceIds, ctx.hop);
     }
     default:
       return false;

@@ -6,7 +6,9 @@ import {
   Activity,
   BellRing,
   BookOpen,
+  Gauge,
   Network,
+  PlugZap,
   Settings,
   TriangleAlert,
   type LucideIcon,
@@ -25,6 +27,8 @@ const NAV: NavItem[] = [
   { href: '/incidents', label: '事件', icon: TriangleAlert },
   { href: '/topology', label: '拓扑', icon: Network },
   { href: '/cases', label: '案例库', icon: BookOpen },
+  { href: '/sources', label: '数据源', icon: PlugZap },
+  { href: '/metrics', label: '运行指标', icon: Gauge },
   { href: '/settings', label: '设置', icon: Settings },
 ];
 

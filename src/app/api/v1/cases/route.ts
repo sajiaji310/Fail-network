@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { listCases } from '@/modules/case/service';
 
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
         parsed.error.issues.map((i) => `${i.path.join('.') || 'query'}: ${i.message}`),
       );
     }
-    const result = await listCases(parsed.data);
+    const result = await listCases({ ...parsed.data, tenantId: tenantOf(req) });
     return NextResponse.json(result, { headers: { 'x-trace-id': traceId } });
   } catch (error) {
     const { status, body } = toErrorBody(error);

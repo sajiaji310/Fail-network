@@ -53,6 +53,23 @@ console.log(`  事件 ${sim.incidentId}，告警 ${sim.alertTotal} 条`);
 console.log('→ 触发研判');
 await post(`/api/v1/incidents/${sim.incidentId}/analyze`, { force: true });
 
+// 顺手推一条真实源格式的告警：让「运行指标」页的真实源计数不是 0，
+// 也让截图证明适配器真的能收数据，而不是只有 curl 里能用
+console.log('→ 推一条 Alertmanager 格式告警');
+await post('/api/v1/ingest/alertmanager?source=prod-am', {
+  version: '4',
+  status: 'firing',
+  alerts: [
+    {
+      status: 'firing',
+      labels: { alertname: 'LinkDown', instance: 'acc-sw-07.lab:9100', severity: 'warning' },
+      annotations: { summary: 'Gi0/7 link down（截图演示）', value: '100%' },
+      startsAt: new Date().toISOString(),
+      fingerprint: `shot-${Date.now()}`,
+    },
+  ],
+});
+
 const browser = await chromium.launch({ channel: 'chrome' });
 const context = await browser.newContext({
   viewport: { width: 1440, height: 900 },
@@ -91,6 +108,22 @@ try {
   await settle(page, '根因研判');
   await shot(page, 'incident-detail');
 
+  // 采纳首要假设：让「运行指标」页的人工接受率有真实分子，而不是一条「—」
+  console.log('→ 采纳首要假设');
+  const detail = await (await fetch(`${BASE}/api/v1/incidents/${sim.incidentId}`)).json();
+  const firstHypothesis = detail.hypotheses?.[0];
+  if (firstHypothesis) {
+    const res = await fetch(
+      `${BASE}/api/v1/incidents/${sim.incidentId}/hypotheses/${firstHypothesis.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ verdict: 'ACCEPTED', note: '截图演示：采纳首要根因' }),
+      },
+    );
+    if (!res.ok) console.warn(`  采纳失败：HTTP ${res.status}`);
+  }
+
   await page.goto(`${BASE}/topology`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.react-flow__node', { timeout: 30_000 });
   await page.waitForTimeout(1200); // 等布局动画收尾
@@ -99,6 +132,15 @@ try {
   await page.goto(`${BASE}/cases`, { waitUntil: 'domcontentloaded' });
   await settle(page, '案例库');
   await shot(page, 'cases');
+
+  // 第 4 阶段：数据源接入与运行指标
+  await page.goto(`${BASE}/sources`, { waitUntil: 'domcontentloaded' });
+  await settle(page, '数据源');
+  await shot(page, 'sources');
+
+  await page.goto(`${BASE}/metrics`, { waitUntil: 'domcontentloaded' });
+  await settle(page, '运行指标');
+  await shot(page, 'metrics');
 } finally {
   await browser.close();
 }

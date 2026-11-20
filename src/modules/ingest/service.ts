@@ -1,8 +1,14 @@
 import { db } from '@/lib/db';
 import { recordAlert, type ParentCache } from '@/modules/alerts/service';
+import { findDevice, loadDevices } from './resolve';
 import type { ParseIssue, RawAlert } from './schema';
 
 export type IngestIssue = ParseIssue & { deviceName?: string };
+
+export type IngestOptions = {
+  /** 数据归属租户。真实接入时由 API Key 携带，未指定走 default */
+  tenantId?: string;
+};
 
 export type IngestResult = {
   source: string;
@@ -27,6 +33,7 @@ export type IngestResult = {
 export async function ingestAlerts(
   source: string,
   alerts: readonly RawAlert[],
+  options: IngestOptions = {},
 ): Promise<IngestResult> {
   const result: IngestResult = {
     source,
@@ -40,12 +47,8 @@ export async function ingestAlerts(
   };
   if (alerts.length === 0) return result;
 
-  const names = [...new Set(alerts.map((a) => a.deviceName))];
-  const devices = await db.device.findMany({
-    where: { name: { in: names } },
-    select: { id: true, name: true },
-  });
-  const deviceByName = new Map(devices.map((d) => [d.name, d.id]));
+  // 别名 / 设备名 / IP 三路解析，见 resolve.ts 的优先级说明
+  const lookup = await loadDevices(options.tenantId ?? 'default');
 
   const externalKeys = alerts.map((a) => a.externalKey).filter((k): k is string => !!k);
   const existing = new Set(
@@ -61,12 +64,12 @@ export async function ingestAlerts(
   const now = new Date();
 
   for (const alert of alerts) {
-    const deviceId = deviceByName.get(alert.deviceName);
-    if (!deviceId) {
+    const device = findDevice(lookup, alert.deviceName);
+    if (!device) {
       result.failed++;
       result.issues.push({
         deviceName: alert.deviceName,
-        message: `设备不存在：${alert.deviceName}（先跑 npm run db:seed 或检查名称拼写）`,
+        message: `设备不存在：${alert.deviceName}（先跑 npm run db:seed，或在「数据源」页给这个主机名加设备别名）`,
       });
       continue;
     }
@@ -79,7 +82,7 @@ export async function ingestAlerts(
     try {
       const outcome = await recordAlert(
         {
-          deviceId,
+          deviceId: device.id,
           type: alert.type,
           severity: alert.severity,
           metric: alert.metric ?? null,

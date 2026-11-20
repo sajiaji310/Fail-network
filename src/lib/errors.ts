@@ -5,6 +5,7 @@
 export const ERROR_CODES = {
   VALIDATION_FAILED: { status: 400, message: '参数校验失败' },
   UNAUTHORIZED: { status: 401, message: '缺少或错误的凭证' },
+  FORBIDDEN: { status: 403, message: '当前角色无权执行该操作' },
   NOT_FOUND: { status: 404, message: '资源不存在' },
   INVALID_TRANSITION: { status: 409, message: '事件状态非法流转' },
   ALREADY_CLAIMED: { status: 409, message: '事件已被他人接手' },

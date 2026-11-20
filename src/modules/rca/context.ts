@@ -21,6 +21,7 @@ import type {
 } from './context-types';
 import { isCaseRelevant } from './relevance';
 import { assessTopology } from '@/modules/topology/completeness';
+import { loadTrends, metricRef } from '@/modules/metrics/service';
 
 export type {
   ContextAlert,
@@ -36,12 +37,14 @@ export type {
  * 研判上下文组装（文档 10.1）。单次研判输入控在 6k tokens 内，
  * 裁剪逻辑在 `context-trim.ts`，本文件只做取数与归一。
  *
- * 数据现状：库里没有独立指标表，CPU/内存/端口错包只能取告警自带的 value/threshold，
- * 即"上报那一刻的快照"。有损（没有时间序列），但比编造强；prompt 里会标注来源，
- * 避免模型把它当趋势推理。
+ * 数据现状：告警自带 value/threshold 是"上报那一刻的快照"；第 4 阶段接入 `MetricSample`
+ * 之后，事件窗口内的采样点会补上首末值、峰值与斜率。**没有采样时不要谈趋势** ——
+ * prompt 与上下文数据都按这个口径区分（source=ALERT vs SAMPLE）。
  */
 
 export const CHANGE_LOOKBACK_HOURS = 24;
+/** 指标快照回看窗口：事件前 30 分钟足够看出爬升，不会把上下文预算吃光 */
+export const METRIC_LOOKBACK_MS = 30 * 60_000;
 
 export async function buildIncidentContext(idOrCode: string): Promise<ContextBundle | null> {
   const incident = await db.incident.findFirst({
@@ -103,17 +106,53 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
     .sort(sortContextAlerts)
     .slice(0, MAX_ALERTS_IN_CONTEXT);
 
-  const metrics: ContextMetric[] = alerts
-    .filter((a) => a.value !== null || a.threshold !== null)
-    .slice(0, MAX_METRICS_IN_CONTEXT)
-    .map((a) => ({
-      deviceId: a.deviceId,
-      deviceName: a.deviceName,
-      metric: a.metric ?? a.type,
-      value: a.value,
-      threshold: a.threshold,
-      at: a.firstSeen,
-    }));
+  const metrics: ContextMetric[] = [];
+  {
+    const alertMetrics: ContextMetric[] = alerts
+      .filter((a) => a.value !== null || a.threshold !== null)
+      .map((a) => ({
+        ref: metricRef(a.deviceName, a.metric ?? a.type),
+        deviceId: a.deviceId,
+        deviceName: a.deviceName,
+        metric: a.metric ?? a.type,
+        value: a.value,
+        threshold: a.threshold,
+        unit: null,
+        at: a.firstSeen,
+        source: 'ALERT' as const,
+      }));
+
+    // 指标快照只看事件前后这一段：更早的曲线与本次故障无关，且会把上下文预算吃掉
+    const trends = await loadTrends(
+      incidentDeviceIds,
+      new Date(firstAlertAt.getTime() - METRIC_LOOKBACK_MS),
+      incident.lastSeen,
+    );
+
+    for (const item of alertMetrics) {
+      const trend = trends.get(`${item.deviceId}|${item.metric}`);
+      metrics.push(trend ? { ...item, trend } : item);
+    }
+    const covered = new Set(metrics.map((m) => `${m.deviceId}|${m.metric}`));
+    for (const [key, trend] of trends) {
+      if (covered.has(key)) continue;
+      const deviceName = nameOf.get(trend.deviceId) ?? trend.deviceId;
+      metrics.push({
+        ref: metricRef(deviceName, trend.metric),
+        deviceId: trend.deviceId,
+        deviceName,
+        metric: trend.metric,
+        value: trend.last,
+        threshold: null,
+        unit: trend.unit,
+        at: trend.to,
+        source: 'SAMPLE',
+        trend,
+      });
+    }
+    // 有曲线的排前面：模型读到的第一屏最好是有趋势的证据，而不是只有瞬时值的那几条
+    metrics.sort((a, b) => Number(!!b.trend) - Number(!!a.trend));
+  }
 
   /** 某设备到事件影响面的最小跳数（影响面内为 0） */
   const hopsFrom = (deviceId: string): number => {
@@ -195,7 +234,7 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
     nodes,
     links,
     alerts,
-    metrics,
+    metrics: metrics.slice(0, MAX_METRICS_IN_CONTEXT),
     changes,
     cases,
     topology: assessTopology(

@@ -166,12 +166,15 @@ export function makeContext(): ContextBundle {
     ],
     metrics: [
       {
+        ref: `metric:${DEV.acc11.name}:packet_loss`,
         deviceId: DEV.acc11.id,
         deviceName: DEV.acc11.name,
         metric: 'packet_loss',
         value: 3.2,
         threshold: 1,
+        unit: '%',
         at: at(4),
+        source: 'ALERT' as const,
       },
     ],
     changes: [

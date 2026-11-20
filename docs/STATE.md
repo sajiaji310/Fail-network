@@ -1,11 +1,13 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-20 00:40
+> 最后更新：2026-11-20 23:58
 
 ## 当前任务
 
-**T09 评测与发布 — 已实现，等待人工验收（最后一张卡）**
+**第 4 阶段（真实数据接入和规模化）— T10–T14 已实现，等待人工验收**
+
+阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
 
 ## 已完成
 
@@ -281,6 +283,66 @@
 
 **门禁**：format / lint / typecheck / **test 271 passed（34 files）** / build / **E2E 2 passed** 全绿。
 
+## 第 4 阶段收口：真实数据接入和规模化（提交待填）
+
+评审这一阶段的目标是"验证真实网络环境中的价值"，落成五件事：真实源能接进来、大批量不堵住请求、
+结论不只靠告警瞬时值、安全边界能交付、以及用真实事件量出 MTTR/接受率/误抑制成本。
+
+**1. 真实数据源（T10）**
+
+`modules/ingest/sources/alertmanager.ts` 与 `zabbix.ts` 把上游 payload 归一成 `RawAlert`：
+告警标题经 `classifyAlertName` 映射到平台类型词表（否则抑制不敢做、打分拿不到类型分）；
+`resolved` 告警跳过并计入 `skipped`；Alertmanager 的零值 `endsAt`（`0001-01-01`）不当恢复时间；
+纳秒时间裁到毫秒。
+
+设备匹配是最容易卡住的一步：新增 `DeviceAlias`，解析顺序 **别名 → 设备名 → 设备 IP**，大小写不敏感。
+`/sources` 页面把三个推送地址、可复制的 curl、别名表和最近批次摊在一页上。
+
+> 取舍：不自动创建未知设备。自动建会把拼写错误变成永久脏数据（`core-sw-o1` 和真设备看起来没区别），
+> 宁可让这行进 issues 让人补一条别名。
+
+**2. 批处理导入（T11）**
+
+`IngestBatch` 表 + `submitIngest`：≤ `INGEST_SYNC_LIMIT`（500）同步跑完，结果形状与旧接口一致；
+超过则落批次行后立即返回 202 + `batchId`，后台按 200 行分块推进，每块写一次进度并让出事件循环。
+
+> 状态落库、执行在进程内。进程重启会让批次停在 RUNNING，所以 `GET /ingest/batches?sweep=1`
+> 会把超时未完成的批次标成 FAILED（"批次中断：进程在任务完成前退出"）—— 状态诚实比状态好看重要。
+> 多副本部署要换成外部队列，这条已写进代码注释。
+
+**3. 指标快照（T12）**
+
+`MetricSample` 以 `(deviceId, metric, at, source)` 唯一，上游重推不覆盖已有采样。事件窗口
+（首个告警前 30 分钟 ~ 最后告警）内按 设备+指标 聚合出 `{samples, first, last, min, max, slopePerMin}`，
+作为 **`METRIC` 类证据**进入 prompt（ref = `metric:<设备名>:<指标>`），L1 校验认这类 ref，
+L2 仍要求设备在影响面 ≤2 跳内。
+
+> 没有采样时不生成趋势，prompt 里也照实写"仅告警瞬时值，不要当趋势使用"。让模型"猜曲线"
+> 比没有曲线更糟。
+
+**4. RBAC / 多租户 / 审计检索 / 保留策略（T13）**
+
+- 多 Key 配置 `API_KEYS=[{key,role,tenant,name}]`，只配 `API_KEY` 时视为 ADMIN + default；
+- `lib/rbac.ts` 纯函数按方法与路径判角色：写操作要 RESPONDER，审计/数据源/管理要 ADMIN，
+  不足返回 403 并说明缺什么（401 是"我不认识你"，403 是"你不能做这个"）；
+- 租户由 Key 绑定，`Incident` / `CaseRecord` / `AuditLog` / `IngestBatch` / `MetricSample` 带 `tenantId`，
+  事件租户由告警所属设备推出并快照；**不接受 `x-tenant` 请求头自称**；
+- 审计查询补 `actor / from / to / cursor`，按时间倒序 + `at < cursor` 翻页（只追加的时间序列不适合 offset）；
+- 保留策略：指标 30 天 / 审计 180 天 / 批次 30 天 / 已结案事件默认不清理，
+  接口与 CLI 都默认 dry-run。
+
+**5. 运行指标（T14）**
+
+`/metrics` 页给出 MTTR p50/p90、人工接受率、误抑制率，以及真实源/模拟源的量级。
+口径全部写在模块注释与页面上：接受率分母只算已裁决假设；误抑制 = 被压制的告警中父告警已恢复
+而它还在报的那部分（父告警恢复后压制理由就消失）；MTTR 用分位是因为均值会被长尾拉偏。
+
+**新增测试 45 条**：适配器 18、RBAC/Key 11、批处理 3、指标 7、保留策略 3、运行指标口径 3。
+总计 316 passed（41 文件）。
+
+**门禁**：format / lint / typecheck / **test 316 passed（41 文件）** / build（新路由 9 条）/ **E2E 2 passed** 全绿；
+截图新增 `sources.png` 与 `metrics.png`，全部用生产构建重拍。
+
 ## 未完成 / 已知偏差
 
 - ~~B4（人工拆分）按文档推迟到 P2~~ → 已在第 2 阶段实现（`POST /api/v1/incidents/[id]/split`）
@@ -341,17 +403,29 @@
   `npm run build` + `npm run start` 起来且 `/api/health` 200
 - **历史归档事件在列表里显示「告警 0 · 设备 0」**：30 条种子历史事件没有关联 `Alert` 行
   （种子只造了案例文案，没造配套告警）。活跃事件计数正常，属数据侧欠账，不是聚合算错
-- **新增 3 张表**（文档 8 节模型没有）：`HypothesisVerify`（验证勾选）、`Service` / `ServiceDevice`（业务服务依赖）；
-  `Incident` 同时新增 `assignee / team / claimedAt / slaMinutes` 四个字段。理由同前几阶段的
-  `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这几列承载，回写文档待办
-- **接手没有身份校验**：`assignee` 是自由填写的名字，真正的身份只有 API Key 尾号（`actor`）。
-  MVP-0 没有用户表，做不了"只能接自己的单"；RBAC 与值班表在评审第 4 阶段
+- **新增 7 张表**（文档 8 节模型没有）：`HypothesisVerify`（验证勾选）、`Service` / `ServiceDevice`（业务服务依赖）、
+  `DeviceAlias`（真实源主机名映射）、`MetricSample`（指标快照）、`IngestBatch`（导入批次）、`Tenant`（租户）；
+  `Incident` 同时新增 `assignee / team / claimedAt / slaMinutes / tenantId` 五个字段。理由同前几阶段的
+  `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这些列承载，回写文档待办
+- **接手没有身份校验**：`assignee` 仍是自由填写的名字。RBAC 管住了"谁能写"，但"只能接自己的单"
+  需要用户表与登录态，MVP-0 没有；当前身份只有 API Key 的 `actor`
+- **多租户是"Key 绑定租户 + 查询过滤"，不是行级安全**：`Device.name` 仍全局唯一、
+  告警指纹签名不含租户，两个租户不能有同名设备。控制台是单租户（default）视图。
+  真做多租户要把唯一键改成 `(tenantId, name)`、指纹/聚簇 key 加租户盐，并给所有关联查询补 scope
 - **响应时限只管"有没有人接手"，不管"多久修好"**：MTTR 目标（解决时限）需要按故障类型分档，
   当前数据里没有"预计恢复时间"这类字段，硬编一个目标只会变成没人看的口号
 - **业务服务依赖是种子手工维护的**：`Service` / `ServiceDevice` 没有管理界面，也没接 CMDB；
   影响面只回答"波及哪几个已登记业务"，未登记的设备命中服务时页面会明说"未命中"
 - **研判进度表是进程内单例**（`globalThis`）：单实例没问题；多实例部署时轮询可能打到别的进程，
   前端会退化成"等着，看不到阶段"。升级 SSE 时顺手换 Redis，接口形状不变
+- **指标是采样快照，不是时序库**：`MetricSample` 只保留事件窗口够用的点，降采样、长期存储、
+  多标签查询都没有；真要这些应该接 Prometheus 而不是在业务库里长一套 TSDB
+- **批次执行在进程内**：状态落库但推进靠本进程，重启会让批次中断（`sweep` 会标 FAILED）。
+  多副本部署必须换外部队列，否则同一批次可能被两个进程同时推进
+- **误抑制率是近似口径**：「父告警先恢复、自身仍在抑制」是可测的信号，但"压错"还有别的形态
+  （压对了对象但压太久、压制链多级传递），当前指标只覆盖最容易观测的一类
+- **页面不做鉴权，只有 `/api/v1/*` 走 RBAC**：控制台默认仍由反向代理/内网保护；
+  multi-tenant 部署时控制台是 default 租户视图，不是按 Key 切换的
 
 ## 已知行为（不是 bug，验收时别误会）
 
@@ -363,8 +437,10 @@
 
 ## 下一步
 
-1. 人工验收第 3 阶段（值班效率）：`/overview` 看板 → 接手 → 勾选验证步骤 → 结案
-2. 第 4 阶段按评审顺序推进：真实数据接入（Prometheus/Zabbix/Syslog 至少一种）、导入改批处理并提供批次状态、指标快照、多租户与 RBAC
+1. 人工验收第 4 阶段（真实接入）：`/sources` 看推送地址与别名 → 推一条 Alertmanager/Zabbix payload →
+   `/ingest/batches` 看批次 → `/metrics` 看真实源计数与 MTTR/接受率
+2. 用真实环境的一批告警回填一次（建议 ≥ 1 万条），观察批次耗时、去重率与「设备不存在」占比；
+   设备名对不上是接入期的主要成本，别名表要跟着补
 3. 通过后 → MVP-0 收口：打 `v0.1.0` tag、补 GitHub Topics、Release notes
 
 ## T09 人工验收清单
@@ -390,13 +466,25 @@ npx playwright test
 NEXT_DIST_DIR=.next-serve npm run build
 NEXT_DIST_DIR=.next-serve PORT=3100 npm run start
 curl -s localhost:3100/api/health | jq '{status,stage,llm}'
-#   期望：status=ok, stage="第 3 阶段：提升值班效率"
+#   期望：status=ok, stage="第 4 阶段：真实数据接入和规模化"
 
-# 5) 截图重生成（注入剧本 → 研判 → 接手 → 真实渲染截图）
+# 5) 真实数据源冒烟（第 4 阶段新增）
+curl -s -X POST localhost:3100/api/v1/ingest/alertmanager?source=demo \
+  -H 'content-type: application/json' \
+  -d '{"version":"4","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"LinkDown","instance":"CORE-SW-01:9100","severity":"critical"},"annotations":{"summary":"Gi0/1 link down"},"startsAt":"2026-11-20T10:00:00Z","fingerprint":"acc-1"}]}'
+#   期望：accepted ≥ 0、failed=0（instance 的 :9100 会自动剥掉）
+curl -s 'localhost:3100/api/v1/ingest/batches?limit=3' | jq '.items[0] | {kind,status,processed,total}'
+curl -s -X POST localhost:3100/api/v1/metrics/samples -H 'content-type: application/json' \
+  -d '{"samples":[{"deviceName":"CORE-SW-01","metric":"cpu.util","value":91.2,"unit":"%","at":"2026-11-20T10:00:00Z"}]}'
+curl -s 'localhost:3100/api/v1/metrics?deviceName=CORE-SW-01&metric=cpu.util&minutes=60' | jq '.trend'
+curl -s -X POST localhost:3100/api/v1/admin/retention -H 'content-type: application/json' -d '{"dryRun":true}' | jq '.deleted'
+#   期望：dry-run 返回各表可清理条数；不会真删
+
+# 6) 截图重生成（注入剧本 → 研判 → 接手 → 采纳 → 真实渲染截图）
 APP_BASE_URL=http://127.0.0.1:3100 node scripts/screenshots.mjs
-ls docs/screenshots          # overview(值班看板) / incidents / incident-detail / topology / cases / eval-baseline
+ls docs/screenshots   # overview / incidents / incident-detail / topology / cases / eval-baseline / sources / metrics
 
-# 6) 门禁（271 passed）
+# 7) 门禁（316 passed）
 npm run lint && npm run typecheck && npm run test && npm run build
 
 # 7) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）

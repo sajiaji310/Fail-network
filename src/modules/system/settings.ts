@@ -245,6 +245,9 @@ const ACTION_LABEL: Record<string, string> = {
   'incident.claim': '接手事件',
   'incident.release': '释放事件',
   'hypothesis.verify': '验证步骤',
+  'metric.ingest': '指标写入',
+  'retention.run': '数据清理',
+  'source.alias': '设备别名',
 };
 
 export function auditActionLabel(action: string): string {

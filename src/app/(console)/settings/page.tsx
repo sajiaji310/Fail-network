@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Check, KeyRound, X } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
+import { RetentionPanel } from '@/components/domain/retention-panel';
 import { ScenarioInject } from '@/components/domain/scenario-inject';
 import { DataBaselineCard, EvalBaselineCard } from '@/components/domain/system-status-cards';
 import { absTime } from '@/lib/utils/time';
@@ -13,6 +14,7 @@ import {
   getThresholds,
   getTokenUsage,
 } from '@/modules/system/settings';
+import { getRetentionPolicy } from '@/modules/system/retention';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,11 @@ const DELIVERY = [
   ['T07', '根因研判', '已完成'],
   ['T08', '人工确认 + 简版报告', '已完成'],
   ['T09', '评测与发布', '已完成'],
+  ['T10', '真实数据源接入', '已完成'],
+  ['T11', '批处理导入与批次状态', '已完成'],
+  ['T12', '指标快照与时序证据', '已完成'],
+  ['T13', 'RBAC / 多租户 / 数据保留', '已完成'],
+  ['T14', '运行指标（MTTR / 接受率 / 误抑制）', '已完成'],
 ] as const;
 
 /**
@@ -43,6 +50,7 @@ export default async function SettingsPage() {
   const model = getModelConfig();
   const thresholds = getThresholds();
   const scenarios = getScenarios();
+  const retention = getRetentionPolicy();
   const [usage, incidentStats, audit] = await Promise.all([
     getTokenUsage(),
     getIncidentStats(),
@@ -279,12 +287,90 @@ export default async function SettingsPage() {
       </Card>
 
       <div className="mt-4 rounded-xl border border-border bg-surface px-5 py-4 text-[11.5px] leading-relaxed text-text-tertiary shadow-card">
-        <p>NetScope v0.1.0 · MVP-0 · 单人 + Agent 协作基线 · 阶段「第 3 阶段：提升值班效率」</p>
+        <p>
+          NetScope v0.1.0 · MVP-0 · 单人 + Agent 协作基线 · 阶段「第 4 阶段：真实数据接入和规模化」
+        </p>
         <p className="mt-1">
           接口清单见 <code className="font-mono">docs/API.md</code>，已实现范围与已知偏差见{' '}
           <code className="font-mono">docs/STATE.md</code>，评分与失败场景见{' '}
           <code className="font-mono">README.md</code> 评测段。
         </p>
+      </div>
+
+      {/* —— 安全与保留（第 4 阶段：RBAC、租户、数据保留） —— */}
+      <div className="mt-6 mb-2 flex items-baseline gap-2">
+        <h2 className="text-[15px] font-medium tracking-tight">安全与保留</h2>
+        <span className="text-[11.5px] text-text-tertiary">
+          角色划分来自 <code className="font-mono">API_KEYS</code>，保留天数来自环境变量
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        <Card>
+          <CardTitle hint="production 生效，local 一律放行">访问控制</CardTitle>
+          <table className="w-full text-[11.5px]">
+            <thead className="text-[10px] tracking-wide text-text-tertiary uppercase">
+              <tr>
+                <th className="py-1 text-left font-medium">角色</th>
+                <th className="py-1 text-left font-medium">能力</th>
+              </tr>
+            </thead>
+            <tbody className="text-text-secondary">
+              <tr className="border-t border-border">
+                <td className="py-1.5 font-mono text-[11px]">VIEWER</td>
+                <td className="py-1.5">读接口（页面、事件、案例）</td>
+              </tr>
+              <tr className="border-t border-border">
+                <td className="py-1.5 font-mono text-[11px]">RESPONDER</td>
+                <td className="py-1.5">所有写操作：导入、研判、裁决、接手、结案、拆分、验证勾选</td>
+              </tr>
+              <tr className="border-t border-border">
+                <td className="py-1.5 font-mono text-[11px]">ADMIN</td>
+                <td className="py-1.5">审计查询、数据源别名、保留策略清理</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-2.5 text-[11px] leading-5 text-text-tertiary">
+            多 Key 配置：
+            <code className="font-mono">
+              API_KEYS=`[{`{`}
+              &quot;key&quot;:&quot;…&quot;,&quot;role&quot;:&quot;RESPONDER&quot;,&quot;tenant&quot;:&quot;default&quot;
+              {`}`}]`
+            </code>
+            ；只配 <code className="font-mono">API_KEY</code> 时视为 ADMIN + default 租户。租户由
+            Key 决定，不接受请求头自称。
+          </p>
+        </Card>
+
+        <Card>
+          <CardTitle hint="dry-run 默认">数据保留</CardTitle>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11.5px] sm:grid-cols-4">
+            <div>
+              <dt className="text-[10px] text-text-tertiary">指标采样</dt>
+              <dd className="font-mono">{retention.metricDays} 天</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] text-text-tertiary">审计日志</dt>
+              <dd className="font-mono">{retention.auditDays} 天</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] text-text-tertiary">导入批次</dt>
+              <dd className="font-mono">{retention.batchDays} 天</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] text-text-tertiary">已结案事件</dt>
+              <dd className="font-mono">
+                {retention.closedIncidentDays === 0
+                  ? '不清理'
+                  : `${retention.closedIncidentDays} 天`}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-[11px] leading-5 text-text-tertiary">
+            事件默认不清理：MTTR、接受率、误抑制率都从事件算，删掉指标就断档。要控体量应该归档到冷存储。
+          </p>
+          <RetentionPanel policy={retention} />
+        </Card>
       </div>
 
       {/* —— 系统状态（原概览页的验收材料，评审 5.1 搬迁至此） —— */}

@@ -62,6 +62,8 @@ export type CaseQuery = {
   verification?: CaseVerification;
   page?: number;
   pageSize?: number;
+  /** 租户范围；不传按 default */
+  tenantId?: string;
 };
 
 export type CaseListResult = {
@@ -208,15 +210,19 @@ export function buildCaseDraft(detail: IncidentDetail, accepted: HypothesisView 
  * 事件因重开再次结案时不会把它打回 UNVERIFIED —— 人的判断不该被系统的重复写入抹掉。
  */
 export async function upsertCase(incidentId: string, draft: CaseDraft): Promise<string> {
-  const existing = await db.caseRecord.findUnique({
-    where: { incidentId },
-    select: { verification: true },
-  });
+  const [existing, incident] = await Promise.all([
+    db.caseRecord.findUnique({
+      where: { incidentId },
+      select: { verification: true },
+    }),
+    // 案例继承事件所属租户：案例库按租户检索，不能靠 incidentId 二次 join 才知道归属
+    db.incident.findUnique({ where: { id: incidentId }, select: { tenantId: true } }),
+  ]);
   const keepManual = existing !== null && existing.verification !== 'UNVERIFIED';
 
   const row = await db.caseRecord.upsert({
     where: { incidentId },
-    create: { incidentId, ...draft },
+    create: { incidentId, tenantId: incident?.tenantId ?? 'default', ...draft },
     update: {
       title: draft.title,
       symptom: draft.symptom,
@@ -249,6 +255,7 @@ export async function listCases(query: CaseQuery = {}): Promise<CaseListResult> 
   const q = (query.q ?? '').trim();
 
   const where: Prisma.CaseRecordWhereInput = {
+    tenantId: query.tenantId ?? 'default',
     ...(query.tag ? { tags: { has: query.tag } } : {}),
     ...(query.verification ? { verification: query.verification } : {}),
     ...(q ? { AND: keywordFilter(q) } : {}),

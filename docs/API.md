@@ -6,19 +6,20 @@
 
 ## 关键错误码
 
-| code                    | HTTP | 场景                                              |
-| ----------------------- | ---- | ------------------------------------------------- |
-| `VALIDATION_FAILED`     | 400  | zod 校验失败，details 带字段路径                  |
-| `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配         |
-| `NOT_FOUND`             | 404  | 资源不存在                                        |
-| `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`） |
-| `ALREADY_CLAIMED`       | 409  | 事件已被他人接手，`details` 带当前责任人          |
-| `INCIDENT_CLOSED`       | 409  | 事件已结束，不能再变更处理人                      |
-| `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                        |
-| `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）         |
-| `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`     |
-| `LLM_UNAVAILABLE`       | 503  | 模型超时且降级也失败                              |
-| `INTERNAL`              | 500  | 兜底，日志带 traceId                              |
+| code                    | HTTP | 场景                                               |
+| ----------------------- | ---- | -------------------------------------------------- |
+| `VALIDATION_FAILED`     | 400  | zod 校验失败，details 带字段路径                   |
+| `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配          |
+| `FORBIDDEN`             | 403  | Key 有效但角色不足，`details` 带 `required/actual` |
+| `NOT_FOUND`             | 404  | 资源不存在                                         |
+| `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`）  |
+| `ALREADY_CLAIMED`       | 409  | 事件已被他人接手，`details` 带当前责任人           |
+| `INCIDENT_CLOSED`       | 409  | 事件已结束，不能再变更处理人                       |
+| `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                         |
+| `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）          |
+| `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`      |
+| `LLM_UNAVAILABLE`       | 503  | 模型超时且降级也失败                               |
+| `INTERNAL`              | 500  | 兜底，日志带 traceId                               |
 
 ## 系统
 
@@ -30,24 +31,81 @@
 
 ## 安全边界
 
-| 维度     | 规则                                                                                                  |
-| -------- | ----------------------------------------------------------------------------------------------------- |
-| 鉴权     | 仅 `APP_ENV=production` 生效：`/api/v1/*` 写方法 + `/api/v1/audit` 读方法需要 `x-api-key`；local 放行 |
-| 限流     | 全环境按 IP 滑动窗口：写 30/min、读 120/min（`RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN`） |
-| 请求体   | 声明超限由中间件直接 413；chunked 上传由 `lib/http/body.ts` 边读边计数，超限立即断流                  |
-| 数据库   | `docker-compose.yml` 端口绑 `127.0.0.1`，不对外暴露                                                   |
-| 健康检查 | 不返回数据库错误原文、连接串、主机名                                                                  |
+| 维度     | 规则                                                                                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| 鉴权     | 仅 `APP_ENV=production` 生效：`/api/v1/*` 写方法 + 敏感读接口需要 `x-api-key`；local 放行                  |
+| 角色     | 写操作需 `RESPONDER`；`/api/v1/audit`、`/api/v1/admin/*`、`/api/v1/sources/*` 需 `ADMIN`（403 说明缺什么） |
+| 租户     | 租户由 Key 绑定（`tenant` 字段），不接受请求头自称；列表/详情/案例/审计按租户过滤                          |
+| 限流     | 全环境按 IP 滑动窗口：写 30/min、读 120/min（`RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN`）      |
+| 请求体   | 声明超限由中间件直接 413；chunked 上传由 `lib/http/body.ts` 边读边计数，超限立即断流                       |
+| 数据库   | `docker-compose.yml` 端口绑 `127.0.0.1`，不对外暴露                                                        |
+| 健康检查 | 不返回数据库错误原文、连接串、主机名                                                                       |
+
+### Key 配置与 RBAC
+
+```bash
+# 多 Key（推荐）：role = VIEWER | RESPONDER | ADMIN；tenant 决定数据范围
+API_KEYS='[{"key":"sk-viewer-xxx","role":"VIEWER","tenant":"default","name":"只读"},
+           {"key":"sk-ops-xxx","role":"RESPONDER","tenant":"default","name":"值班-陈昊"},
+           {"key":"sk-admin-xxx","role":"ADMIN","tenant":"default","name":"平台管理员"}]'
+# 兼容：只配 API_KEY 时视为 ADMIN + default 租户
+API_KEY="sk-legacy-xxx"
+```
+
+| 角色        | 能力                                                     |
+| ----------- | -------------------------------------------------------- |
+| `VIEWER`    | 读接口（页面、事件、案例）                               |
+| `RESPONDER` | 所有写操作：导入、研判、裁决、接手、结案、拆分、验证勾选 |
+| `ADMIN`     | 审计查询、数据源别名、保留策略清理                       |
+
+判定逻辑在 `lib/rbac.ts`（纯函数，按方法与路径前缀），middleware 与路由内 `assertRole` 共用同一套规则。
 
 ## 告警
 
-| Method | Path                      | 说明         | 关键参数                                                                                   |
-| ------ | ------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| GET    | `/api/v1/alerts`          | 告警列表     | `?status=ACTIVE\|SUPPRESSED\|RESOLVED&severity=&deviceId=&page=&pageSize=`                 |
-| POST   | `/api/v1/ingest/alerts`   | 批量导入告警 | body `{source, alerts:[RawAlert]}`；返回 `{accepted, deduped, suppressed, failed, errors}` |
-| POST   | `/api/v1/ingest/simulate` | 注入故障剧本 | body `{scenario, seed?, reset?}`；返回 `{alerts, incidentId, correlation}`                 |
+| Method | Path                      | 说明         | 关键参数                                                                                                |
+| ------ | ------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/alerts`          | 告警列表     | `?status=ACTIVE\|SUPPRESSED\|RESOLVED&severity=&deviceId=&page=&pageSize=`                              |
+| POST   | `/api/v1/ingest/alerts`   | 批量导入告警 | body `{source, alerts:[RawAlert]}`；≤ `INGEST_SYNC_LIMIT`（默认 500）同步返回，超过返回 202 + `batchId` |
+| POST   | `/api/v1/ingest/simulate` | 注入故障剧本 | body `{scenario, seed?, reset?}`；返回 `{alerts, incidentId, correlation}`                              |
 
 `RawAlert` 字段：`deviceName | deviceId`、`type`、`severity`、`message`、`firstSeen`、
 `metric?`、`value?`、`threshold?`、`externalKey?`。CSV 导入用 `?format=csv` + `text/csv` 正文。
+
+设备解析顺序：**别名（DeviceAlias）→ 设备名 → 设备 IP**，大小写不敏感。解析不到的行计入
+`failed` 并进 `issues`，不会静默丢弃。
+
+## 数据源接入
+
+| Method | Path                          | 说明                  | 备注                                                                                  |
+| ------ | ----------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/ingest/alertmanager` | Prometheus webhook    | Alertmanager v4 payload；`resolved` 计入 `skipped`；`instance` 自动剥端口             |
+| POST   | `/api/v1/ingest/zabbix`       | Zabbix webhook        | 接受单对象 / `{problems:[...]}` / 裸数组；severity 支持 0–5 与 High/Disaster 文本     |
+| GET    | `/api/v1/ingest/batches`      | 最近导入批次          | `?limit=20&sweep=1`；`sweep` 会把进程中断留下的 RUNNING 批次标成 FAILED               |
+| GET    | `/api/v1/ingest/batches/[id]` | 批次状态              | 返回 `{status, total, processed, accepted, deduped, failed, progress, issues, error}` |
+| POST   | `/api/v1/sources/aliases`     | 新增设备别名（ADMIN） | body `{alias, deviceName, note?}`；alias 全局唯一，冲突返回 400                       |
+
+两个 webhook 的响应形状一致：
+
+```jsonc
+// 同步（≤ 500 行）
+{ "mode": "sync", "source": "prod-am", "accepted": 1, "deduped": 0, "suppressed": 1,
+  "failed": 0, "skipped": 1, "issues": [] }
+
+// 异步（> 500 行）：HTTP 202 + x-batch-id
+{ "mode": "async", "batchId": "cmwp5...", "total": 30000, "skipped": 0, "issues": [] }
+```
+
+## 指标
+
+| Method | Path                      | 说明             | 备注                                                                                     |
+| ------ | ------------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/metrics/samples` | 指标采样批量写入 | body `{samples:[{deviceName, metric, value, unit?, at, source?, labels?}]}`，单批 ≤ 5000 |
+| GET    | `/api/v1/metrics`         | 采样查询         | `?deviceName=&deviceId=&metric=&minutes=60&from=&to=&limit=500`；返回 `points` + `trend` |
+
+- 幂等键：`(deviceId, metric, at, source)`，上游重推同一时刻不会覆盖已有采样。
+- `trend`：`{samples, first, last, min, max, slopePerMin, from, to}`，供页面与 RCA 共用。
+- RCA 上下文会把事件窗口内的采样作为 **`METRIC` 类证据**（ref = `metric:<设备名>:<指标>`），
+  没有采样时不生成趋势，也不会让模型"猜曲线"。
 
 ## 拓扑
 
@@ -223,28 +281,32 @@
 
 ## 审计
 
-| Method | Path            | 说明         | 关键参数                                        |
-| ------ | --------------- | ------------ | ----------------------------------------------- |
-| GET    | `/api/v1/audit` | 操作审计查询 | `?action=&result=OK\|FAIL&limit=30`（上限 200） |
+| Method | Path            | 说明         | 关键参数                                                                             |
+| ------ | --------------- | ------------ | ------------------------------------------------------------------------------------ |
+| GET    | `/api/v1/audit` | 操作审计查询 | `?action=&result=OK\|FAIL&actor=&from=&to=&cursor=&limit=30`（上限 200，ADMIN 角色） |
 
-返回 `{ items: [{ at, action, actor, target, result, detail, requestId, ip }], total }`。
+返回 `{ items: [{ at, action, actor, target, result, detail, requestId, ip }], total, nextCursor }`。
+分页按时间倒序 + `at < cursor`（只追加的时间序列不适合 offset 分页）。
 
 写入时机（由 `audited()` 包装路由，成功记 `OK`、失败记 `FAIL` 后原样抛错）：
 
-| action                | 触发端点                                              |
-| --------------------- | ----------------------------------------------------- |
-| `analyze.run`         | `POST /api/v1/incidents/[id]/analyze`                 |
-| `hypothesis.verdict`  | `PATCH /api/v1/incidents/[id]/hypotheses/[hid]`       |
-| `incident.transition` | `PATCH /api/v1/incidents/[id]`                        |
-| `alert.ingest`        | `POST /api/v1/ingest/alerts`                          |
-| `scenario.inject`     | `POST /api/v1/ingest/simulate`                        |
-| `correlation.run`     | `POST /api/v1/correlation/run`                        |
-| `report.generate`     | `POST /api/v1/incidents/[id]/report`                  |
-| `case.verify`         | `PATCH /api/v1/cases/[id]`                            |
-| `incident.split`      | `POST /api/v1/incidents/[id]/split`                   |
-| `incident.claim`      | `POST /api/v1/incidents/[id]/claim`                   |
-| `incident.release`    | `DELETE /api/v1/incidents/[id]/claim`                 |
-| `hypothesis.verify`   | `POST /api/v1/incidents/[id]/hypotheses/[hid]/verify` |
+| action                | 触发端点                                                               |
+| --------------------- | ---------------------------------------------------------------------- |
+| `analyze.run`         | `POST /api/v1/incidents/[id]/analyze`                                  |
+| `hypothesis.verdict`  | `PATCH /api/v1/incidents/[id]/hypotheses/[hid]`                        |
+| `incident.transition` | `PATCH /api/v1/incidents/[id]`                                         |
+| `alert.ingest`        | `POST /api/v1/ingest/alerts`、`/ingest/alertmanager`、`/ingest/zabbix` |
+| `scenario.inject`     | `POST /api/v1/ingest/simulate`                                         |
+| `correlation.run`     | `POST /api/v1/correlation/run`                                         |
+| `report.generate`     | `POST /api/v1/incidents/[id]/report`                                   |
+| `case.verify`         | `PATCH /api/v1/cases/[id]`                                             |
+| `incident.split`      | `POST /api/v1/incidents/[id]/split`                                    |
+| `incident.claim`      | `POST /api/v1/incidents/[id]/claim`                                    |
+| `incident.release`    | `DELETE /api/v1/incidents/[id]/claim`                                  |
+| `hypothesis.verify`   | `POST /api/v1/incidents/[id]/hypotheses/[hid]/verify`                  |
+| `metric.ingest`       | `POST /api/v1/metrics/samples`                                         |
+| `source.alias`        | `POST /api/v1/sources/aliases`                                         |
+| `retention.run`       | `POST /api/v1/admin/retention`                                         |
 
 `actor` 记 `local` 或 `api-key:…<尾4位>`；**不记请求体**，`detail` 只含路由显式声明的小字段。
 审计写入失败只降级成一条 warn 日志，不影响业务结果 —— 宁可少一条记录，不能因为审计挂了就让结案失败。
@@ -289,6 +351,18 @@
 - **无 `LLM_API_KEY`**（AC-07）：全链路照常可用，`source=RULE_FALLBACK` 且 `degradedReason` 说明原因。
 - **`LLM_MOCK=true`**：用 fixture 假输出跑通链路；fixture 里刻意含一条引用不存在 ID 的假设，
   用于验证 L1 丢弃（响应中会出现在 `verify.dropped`）。
+
+## 管理（ADMIN）
+
+| Method | Path                      | 说明         | 备注                                                                   |
+| ------ | ------------------------- | ------------ | ---------------------------------------------------------------------- |
+| GET    | `/api/v1/admin/retention` | 当前保留策略 | 返回 `{policy:{metricDays,auditDays,batchDays,closedIncidentDays}}`    |
+| POST   | `/api/v1/admin/retention` | 执行清理     | body `{dryRun?:true}`，**默认 dryRun**；返回各表删除条数与 cutoff 时间 |
+
+保留口径（`RETENTION_*` 环境变量）：指标 30 天 / 审计 180 天 / 批次 30 天 / 已结案事件 0（不清理）。
+事件不默认清理的理由：MTTR、接受率、误抑制率都从事件计算，删掉指标就断档。
+
+CLI 入口：`npm run db:retention`（dry-run）与 `npm run db:retention -- --run`（真删）。
 
 ## 评测（非 HTTP）
 

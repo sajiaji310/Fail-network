@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
@@ -13,7 +14,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const traceId = crypto.randomUUID();
   try {
     const { id } = await ctx.params;
-    const detail = await getIncidentDetail(id);
+    const detail = await getIncidentDetail(id, tenantOf(_req));
     if (!detail) {
       throw new AppError('NOT_FOUND', `事件不存在：${id}`);
     }

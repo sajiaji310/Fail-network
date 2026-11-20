@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { AppError } from '@/lib/errors';
+import { tenantOf } from '@/lib/auth';
 
 /**
  * 操作审计（评审第 1 阶段「审计日志」）。
@@ -27,6 +28,9 @@ export const AUDIT_ACTIONS = [
   'hypothesis.verdict',
   'incident.transition',
   'alert.ingest',
+  'metric.ingest',
+  'retention.run',
+  'source.alias',
   'scenario.inject',
   'correlation.run',
   'report.generate',
@@ -61,6 +65,7 @@ export type AuditInput = {
   detail?: Record<string, unknown> | null;
   requestId?: string | null;
   ip?: string | null;
+  tenantId?: string;
 };
 
 /**
@@ -93,6 +98,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
         detail: (input.detail ?? null) as Prisma.InputJsonValue,
         requestId: input.requestId ?? null,
         ip: input.ip ?? null,
+        tenantId: input.tenantId ?? 'default',
       },
     });
   } catch (error) {
@@ -126,6 +132,7 @@ export async function audited<T>(
   const actor = resolveActor(req);
   const ip = resolveIp(req);
   const requestId = meta.requestId ?? req.headers.get('x-request-id') ?? null;
+  const tenantId = tenantOf(req);
 
   try {
     const result = await run();
@@ -135,6 +142,7 @@ export async function audited<T>(
       actor,
       ip,
       requestId,
+      tenantId,
       result: 'OK',
       detail: { ...meta.detail, ...meta.detailOf?.(result) },
     });
@@ -146,6 +154,7 @@ export async function audited<T>(
       actor,
       ip,
       requestId,
+      tenantId,
       result: 'FAIL',
       detail: {
         ...meta.detail,
@@ -162,15 +171,42 @@ export async function audited<T>(
 export type AuditQuery = {
   action?: string;
   result?: string;
+  /** 操作者：`api-key:…cdef` / `local` / `system` */
+  actor?: string;
+  /** 时间窗（含边界） */
+  from?: Date;
+  to?: Date;
+  /** 分页游标：上一页最后一条的 at */
+  cursor?: Date;
   limit?: number;
+  /** 租户过滤；不传表示不隔离（仅本地单租户页面使用） */
+  tenantId?: string;
 };
 
+/**
+ * 审计查询。
+ *
+ * 分页用 `at < cursor` 而不是 offset：审计是只追加的时间序列，
+ * 翻页期间新记录进来会让 offset 分页重复或漏条 —— 按时间倒序翻就不存在这个问题。
+ * cursor 取上一页最后一条的 `at`，同毫秒的极端情况下可能少一条，可接受。
+ */
 export async function listAudit(query: AuditQuery = {}): Promise<AuditItem[]> {
   const limit = Math.min(200, Math.max(1, query.limit ?? 30));
   const rows = await db.auditLog.findMany({
     where: {
       ...(query.action ? { action: query.action } : {}),
       ...(query.result ? { result: query.result } : {}),
+      ...(query.actor ? { actor: { contains: query.actor } } : {}),
+      ...(query.tenantId ? { tenantId: query.tenantId } : {}),
+      ...(query.from || query.to
+        ? {
+            at: {
+              ...(query.from ? { gte: query.from } : {}),
+              ...(query.to ? { lte: query.to } : {}),
+            },
+          }
+        : {}),
+      ...(query.cursor ? { at: { lt: query.cursor } } : {}),
     },
     orderBy: { at: 'desc' },
     take: limit,
@@ -208,16 +244,17 @@ export type AuditSummary = {
   byAction: { action: string; count: number }[];
 };
 
-export async function getAuditSummary(): Promise<AuditSummary> {
+export async function getAuditSummary(tenantId?: string): Promise<AuditSummary> {
   const since = new Date(Date.now() - 24 * 3600_000);
+  const scope = tenantId ? { tenantId } : {};
   try {
     const [total, last24h, failures, grouped] = await Promise.all([
-      db.auditLog.count(),
-      db.auditLog.count({ where: { at: { gte: since } } }),
-      db.auditLog.count({ where: { at: { gte: since }, result: 'FAIL' } }),
+      db.auditLog.count({ where: scope }),
+      db.auditLog.count({ where: { ...scope, at: { gte: since } } }),
+      db.auditLog.count({ where: { ...scope, at: { gte: since }, result: 'FAIL' } }),
       db.auditLog.groupBy({
         by: ['action'],
-        where: { at: { gte: since } },
+        where: { ...scope, at: { gte: since } },
         _count: { _all: true },
       }),
     ]);

@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { findCredential, parseCredentials } from '@/lib/keys';
+import { hasRole, requiredRole, ROLE_LABEL } from '@/lib/rbac';
 
 /**
- * 安全边界中间件（P0 + 第 1 阶段）。
+ * 安全边界中间件（P0 + 第 1 阶段 + 第 4 阶段 RBAC）。
  *
- * - API Key：仅 production 环境生效，覆盖两类请求：
- *   1. `/api/v1/*` 的写方法（POST/PATCH/PUT/DELETE）；
- *   2. `/api/v1/audit` 的读请求 —— 审计表能反推"谁动了什么"，不能和普通读接口一样敞开。
+ * - 鉴权：仅 production 环境生效，覆盖两类请求：
+ *   1. `/api/v1/*` 的写方法（POST/PATCH/PUT/DELETE）→ 需要 RESPONDER 以上；
+ *   2. 审计 / 数据源 / 管理接口（读也算）→ 需要 ADMIN。
  *   local/staging 放行 —— 保证 E2E、评测脚本、本地开发不被破坏。
+ * - 角色：Key 上带 role（见 `lib/keys.ts` 的 API_KEYS 格式），不足返回 403 并说明需要什么角色。
+ *   返回 403 而不是 401，是因为"你是谁我知道，但你不能做这个"和"我不认识你"是两件事。
  * - 限流：全环境、按 IP 的内存滑动窗口。写接口更严（默认 30/min），读接口宽松（120/min）。
  *   单实例 MVP 够用；多实例需换成 Redis 计数器。
  * - 请求体大小：这里只按 Content-Length 做"明显超限直接打回"，
@@ -16,14 +20,12 @@ import { NextResponse, type NextRequest } from 'next/server';
  * 全站 Basic Auth 会破坏浏览器体验，留给反向代理/Docker 网络层处理。
  */
 const APP_ENV = process.env.APP_ENV ?? 'local';
-const API_KEY = process.env.API_KEY ?? '';
+const CREDENTIALS = parseCredentials(process.env.API_KEYS ?? '', process.env.API_KEY ?? '');
 const WRITE_LIMIT = Number(process.env.RATE_LIMIT_WRITE_PER_MIN ?? 30);
 const READ_LIMIT = Number(process.env.RATE_LIMIT_READ_PER_MIN ?? 120);
 const BODY_LIMIT = Number(process.env.BODY_LIMIT_BYTES ?? 2 * 1024 * 1024);
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** 读也需要 Key 的敏感路径：审计、将来的配置导出 */
-const PROTECTED_READ_PATHS = ['/api/v1/audit'];
 const WINDOW_MS = 60_000;
 
 type Bucket = { w: number[]; r: number[] };
@@ -62,18 +64,24 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  // API Key：production + 写接口（以及敏感读接口）
-  const needsAuth =
-    pathname.startsWith('/api/v1/') &&
-    (isWrite || PROTECTED_READ_PATHS.some((prefix) => pathname.startsWith(prefix)));
+  // 鉴权 + 角色：production 下由 requiredRole 决定"这个请求需要什么角色"
+  const required = pathname.startsWith('/api/v1/') ? requiredRole(req.method, pathname) : null;
 
-  if (APP_ENV === 'production' && needsAuth) {
-    if (!API_KEY) {
-      return reject('SERVER_MISCONFIG', 'production 环境未配置 API_KEY', 500);
+  if (APP_ENV === 'production' && required !== null) {
+    if (CREDENTIALS.length === 0) {
+      return reject('SERVER_MISCONFIG', 'production 环境未配置 API_KEY / API_KEYS', 500);
     }
-    const key = req.headers.get('x-api-key');
-    if (key !== API_KEY) {
+    const credential = findCredential(CREDENTIALS, req.headers.get('x-api-key'));
+    if (!credential) {
       return reject('UNAUTHORIZED', '缺少或错误的 x-api-key', 401);
+    }
+    if (!hasRole(credential.role, required)) {
+      return reject(
+        'FORBIDDEN',
+        `需要 ${ROLE_LABEL[required]}（${required}）权限，当前 Key 为 ${ROLE_LABEL[credential.role]}`,
+        403,
+        { required, actual: credential.role },
+      );
     }
   }
 
