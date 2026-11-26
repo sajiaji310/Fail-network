@@ -14,6 +14,7 @@ import {
   type AnalysisProgress,
 } from './progress';
 import { PROMPT_VERSION } from './prompt';
+import { rescueEmptyResult, type HypothesisOrigin } from './rescue';
 import {
   AnalysisResultSchema,
   parseAnalysisMeta,
@@ -66,6 +67,8 @@ export type AnalysisOutcome = {
   progress?: AnalysisProgress | null;
   /** 后置门禁 GATE-02 清空了几条、为什么（Spec §3.3）：命中缓存时为 undefined */
   gate?: { cleared: number; reasons: string[] };
+  /** 逐条假设的来源（Spec §3.4）：补位发生后同一份结论里会有两种来源 */
+  hypothesesOrigin?: HypothesisOrigin[];
 };
 
 /** 从库里读回上一次研判（命中缓存时不再调用模型） */
@@ -125,6 +128,8 @@ async function readCachedAnalysis(
     trim: meta.trim,
     degradedReason: meta.degradedReason,
     analyzedAt: meta.analyzedAt,
+    gate: meta.gate,
+    hypothesesOrigin: meta.hypothesesOrigin,
   };
 }
 
@@ -166,9 +171,20 @@ export async function runAnalysis(
       : { kept: verify.kept, cleared: [] };
 
     const analyzedAt = new Date().toISOString();
+    // 空结论补位（Spec §3.4）：模型路径上假设被清空时，接上规则引擎的候选并逐条标来源
+    const rescued = rescueEmptyResult({
+      ctx,
+      kept: gate.kept,
+      source: produced.source,
+      degradedReason: produced.degradedReason,
+      summary: produced.result.summary,
+      impactScope: produced.result.impactScope,
+      missingInfo: [...new Set([...produced.result.missingInfo, ...clearanceMissingInfo(gate.cleared)])],
+    });
+
     // 缺拓扑时一律压低置信度（评审 P0-4）：上限由完整度决定，不是模型自己说了算。
-    // 只做 min 截断，不改变假设之间的相对顺序。
-    const kept = gate.kept.map((hypothesis) => ({
+    // 只做 min 截断，不改变假设之间的相对顺序。补位进来的规则假设同样受这个上限约束。
+    const kept = rescued.hypotheses.map((hypothesis) => ({
       ...hypothesis,
       confidence: capConfidence(hypothesis.confidence, ctx.topology.level),
     }));
@@ -176,12 +192,11 @@ export async function runAnalysis(
       kept.length === 0
         ? [
             ...new Set([
-              ...produced.result.missingInfo,
+              ...rescued.missingInfo,
               '全部假设未通过证据校验或归因门禁，未能给出可信根因',
-              ...clearanceMissingInfo(gate.cleared),
             ]),
           ].slice(0, 5)
-        : produced.result.missingInfo;
+        : rescued.missingInfo;
     const gateMeta = {
       cleared: gate.cleared.length,
       reasons: gate.cleared.map((item) => `${item.reason}：${item.detail}`),
@@ -189,16 +204,17 @@ export async function runAnalysis(
 
     const meta: AnalysisMeta = {
       analyzedAt,
-      source: produced.source,
+      source: rescued.source,
       model: produced.model,
       promptVersion: PROMPT_VERSION,
       missingInfo,
       verify: { dropped: verify.dropped, stats: verify.stats },
       trim: ctx.trim.trimmed,
-      degradedReason: produced.degradedReason,
+      degradedReason: rescued.degradedReason,
       tokensUsed: produced.tokensUsed,
       gate: gateMeta,
       promptHint: rcaHintEnabled() ? 'on' : 'off',
+      hypothesesOrigin: rescued.origin,
       topology: {
         level: ctx.topology.level,
         deviceCount: ctx.topology.deviceCount,
@@ -213,9 +229,9 @@ export async function runAnalysis(
     await persistAnalysis({
       incidentId: ctx.incident.id,
       hypotheses: kept,
-      summary: kept.length > 0 ? produced.result.summary : null,
-      impactScope: kept.length > 0 ? produced.result.impactScope : null,
-      source: produced.source,
+      summary: kept.length > 0 ? rescued.summary : null,
+      impactScope: kept.length > 0 ? rescued.impactScope : null,
+      source: rescued.source,
       model: produced.model,
       tokensUsed: produced.tokensUsed,
       meta,
@@ -226,28 +242,31 @@ export async function runAnalysis(
     log.info('rca_analyzed', {
       incident: ctx.incident.code,
       mode,
-      source: produced.source,
+      source: rescued.source,
       kept: kept.length,
       dropped: verify.dropped.length,
+      gateCleared: gate.cleared.length,
+      rescued: rescued.rescued,
       chars: ctx.trim.chars,
     });
 
     return {
       incidentId: ctx.incident.id,
       code: ctx.incident.code,
-      source: produced.source,
+      source: rescued.source,
       model: produced.model,
       cached: false,
-      summary: kept.length > 0 ? produced.result.summary : null,
-      impactScope: kept.length > 0 ? produced.result.impactScope : null,
+      summary: kept.length > 0 ? rescued.summary : null,
+      impactScope: kept.length > 0 ? rescued.impactScope : null,
       hypotheses: kept,
       missingInfo,
       tokensUsed: produced.tokensUsed,
       topologyLevel: ctx.topology.level,
       verify: { dropped: verify.dropped, stats: verify.stats },
       trim: ctx.trim.trimmed,
-      degradedReason: produced.degradedReason,
+      degradedReason: rescued.degradedReason,
       analyzedAt,
+      hypothesesOrigin: rescued.origin,
       progress,
       gate: gateMeta,
     };

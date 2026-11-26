@@ -106,6 +106,12 @@ export const AnalysisMetaSchema = z.object({
     .optional(),
   /** 本次研判的提示词形态（RCA_HINT 开/关）：A/B 对比与回滚复盘都要能对上号 */
   promptHint: z.enum(['on', 'off']).optional(),
+  /**
+   * 逐条假设的来源（Spec §3.4）。与 hypotheses 同序同长：
+   * 空结论补位之后，同一份结论里可能一半来自模型、一半来自规则引擎，
+   * 用一个全局 source 概括会让"提升到底靠谁"这件事永远说不清。
+   */
+  hypothesesOrigin: z.array(z.enum(['LLM', 'RULE_FALLBACK'])).optional(),
   /** 研判时的拓扑完整度（评审 P0-4）：缺拓扑时置信度已按上限下调，事后可复核 */
   topology: z
     .object({
