@@ -29,6 +29,15 @@ const EnvSchema = z.object({
     .int()
     .min(1024)
     .default(2 * 1024 * 1024),
+  // —— 研判质量开关（Spec 0.2）：全部 on/off 二值，写错立刻在启动时炸，不做静默兜底 ——
+  /** 归因字典注入（§3.2）。off = 回滚到 rca-1.0 的提示词形态 */
+  RCA_HINT: z.enum(['on', 'off']).default('on'),
+  /** 设备信号段（§3.1/§4.5）。只用于 B 组消融，不得在 test 集上打开 */
+  RCA_SIGNALS: z.enum(['on', 'off']).default('off'),
+  /** 两段式拒答门禁（§3.3）。off = 两条门禁都不生效，行为回到 0.1 */
+  RCA_GATE: z.enum(['on', 'off']).default('on'),
+  /** 空结论规则补位（§3.4）。off = 模型没给出可用结论时就给空结论 */
+  RCA_RESCUE: z.enum(['on', 'off']).default('on'),
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
@@ -51,4 +60,26 @@ export function llmMode(): LlmMode {
   if (env.LLM_MOCK === 'true') return 'mock';
   if (env.LLM_API_KEY.trim().length === 0) return 'fallback';
   return 'live';
+}
+
+/**
+ * 研判质量开关的读取口（Spec 0.2）。
+ *
+ * 一律走函数而不是直接在业务代码里比字符串：开关是**回滚手段**，
+ * 读它的地方越少，回滚时才越敢相信"关了就真的回到 0.1"。
+ */
+export function rcaHintEnabled(): boolean {
+  return env.RCA_HINT === 'on';
+}
+
+export function rcaSignalsEnabled(): boolean {
+  return env.RCA_SIGNALS === 'on';
+}
+
+export function rcaGateEnabled(): boolean {
+  return env.RCA_GATE === 'on';
+}
+
+export function rcaRescueEnabled(): boolean {
+  return env.RCA_RESCUE === 'on';
 }
