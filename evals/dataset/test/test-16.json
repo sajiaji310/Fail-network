@@ -1,0 +1,80 @@
+{
+  "id": "test-16",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "多设备全未登记类型 + 无变更",
+  "note": "对抗例（验收标准 1）：三台接入上报的全是未登记采集项，彼此只有两跳、互不直连，事件前 24 小时没有任何变更。可归因证据为零，必须拒答且不调用模型",
+  "scenario": {
+    "name": "test-all-unknown-multi-device",
+    "title": "同一下挂的三台接入采集项齐刷刷越限",
+    "description": "ACC-SW-01、ACC-SW-05、ACC-SW-09 的六个未登记采集项在两分钟内先后越限，没有硬件告警、没有链路告警，也没有任何变更记录。系统不认识这些类型，无法归因。",
+    "rootCauseHint": "无（类型未登记，信息不足）",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "UNKNOWN_SENSOR_A",
+        "severity": "P2",
+        "metric": "sensor_a",
+        "value": 68,
+        "threshold": 60,
+        "message": "ACC-SW-01 采集项 A 越限",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "UNKNOWN_SENSOR_B",
+        "severity": "P2",
+        "metric": "sensor_b",
+        "value": 41,
+        "threshold": 30,
+        "message": "ACC-SW-05 采集项 B 越限",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-09",
+        "type": "UNKNOWN_SENSOR_C",
+        "severity": "P2",
+        "metric": "sensor_c",
+        "value": 25,
+        "threshold": 10,
+        "message": "ACC-SW-09 采集项 C 越限",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-01",
+        "type": "UNKNOWN_SENSOR_D",
+        "severity": "P3",
+        "metric": "sensor_d",
+        "value": 19,
+        "threshold": 10,
+        "message": "ACC-SW-01 采集项 D 越限",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "UNKNOWN_SENSOR_E",
+        "severity": "P3",
+        "metric": "sensor_e",
+        "value": 33,
+        "threshold": 20,
+        "message": "ACC-SW-05 采集项 E 越限",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-09",
+        "type": "UNKNOWN_SENSOR_F",
+        "severity": "P3",
+        "metric": "sensor_f",
+        "value": 15,
+        "threshold": 10,
+        "message": "ACC-SW-09 采集项 F 越限",
+        "minuteFromStart": 3
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": null
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "id": "test-15",
+  "set": "test",
+  "kind": "DISTRACTOR",
+  "title": "症状是资源告警，真根因是电源模块故障",
+  "note": "干扰例：ACC-SW-05 先报电源模块故障，随后才是 CPU、会话数越限与下游丢包。症状全是资源类（诱导判 CAPACITY），真根因是 HARDWARE，与 test-12 构成双向对照",
+  "scenario": {
+    "name": "test-power-supply-masked-by-resource",
+    "title": "接入交换机电源模块故障被资源告警掩盖",
+    "description": "ACC-SW-05 电源模块 PWR-2 在第 0 分钟失效，设备降级运行，随后 CPU 与会话数持续越限，堆叠对端 ACC-SW-06 开始丢包。资源类指标是结果，不是原因。",
+    "rootCauseHint": "ACC-SW-05 电源模块失效导致降级运行",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "POWER_SUPPLY_FAILURE",
+        "severity": "P0",
+        "metric": "PWR-2",
+        "message": "ACC-SW-05 电源模块 2 失效",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu.util",
+        "value": 96,
+        "threshold": 80,
+        "message": "ACC-SW-05 CPU 使用率 96%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-05",
+        "type": "SESSION_HIGH",
+        "severity": "P2",
+        "metric": "session.util",
+        "value": 93,
+        "threshold": 85,
+        "message": "ACC-SW-05 会话表使用率 93%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 15.8,
+        "threshold": 1,
+        "message": "ACC-SW-06 上联丢包率 15.8%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 320,
+        "threshold": 50,
+        "message": "ACC-SW-06 到网关时延 320ms",
+        "minuteFromStart": 4
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "ACC-SW-05" },
+    "rootAlert": { "device": "ACC-SW-05", "type": "POWER_SUPPLY_FAILURE" }
+  }
+}

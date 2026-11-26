@@ -10,6 +10,8 @@ export type RunMeta = {
   mode: string;
   startedAt: string;
   durationMs: number;
+  /** test 集清单哈希前 12 位：报告要能自证跑的是哪一版留出集 */
+  manifest?: string;
 };
 
 export type EvalReport = {
@@ -40,6 +42,11 @@ export function renderMarkdown(report: EvalReport): string {
   lines.push(
     `> ${scores.length} 个场景 · 推理模式 \`${meta.mode}\` · 跑于 ${meta.startedAt} · 用时 ${(meta.durationMs / 1000).toFixed(1)}s`,
   );
+  if (meta.manifest) {
+    lines.push(
+      `> 留出集清单哈希 \`${meta.manifest}\`（与 \`evals/dataset/test/MANIFEST.sha256\` 对应）`,
+    );
+  }
   lines.push('');
   lines.push('| 指标 | 结果 | 目标 | 判定 |');
   lines.push('| --- | --- | --- | --- |');
@@ -54,6 +61,18 @@ export function renderMarkdown(report: EvalReport): string {
     `| 平均研判耗时 | ${agg.avgDurationMs} ms | < 8000 ms | ${verdict(agg.avgDurationMs < 8000)} |`,
   );
   lines.push(`| P95 研判耗时 | ${agg.p95DurationMs} ms | — | — |`);
+  lines.push(
+    `| REASONING 阶段均值 | ${agg.reasoning.avgMs} ms | < 6000 ms | ${verdict(agg.reasoning.avgMs < 6000)} |`,
+  );
+  lines.push(
+    `| REASONING 阶段 P95 | ${agg.reasoning.p95Ms} ms | < 9000 ms | ${verdict(agg.reasoning.p95Ms < 9000)} |`,
+  );
+  lines.push(
+    `| Top1 按来源拆分 | LLM ${agg.top1ByOrigin.LLM} · 规则补位 ${agg.top1ByOrigin.RULE_FALLBACK}${agg.top1ByOrigin.UNKNOWN > 0 ? ` · 未标注 ${agg.top1ByOrigin.UNKNOWN}` : ''} | — | 来源披露，不设独立门禁 |`,
+  );
+  lines.push(
+    `| 朴素基线 Top1（最早告警设备 + 字典类别） | ${agg.hintOnlyTop1.hits}/${agg.hintOnlyTop1.total} | — | 参照值：接近上排说明提升可能来自题目本身 |`,
+  );
   lines.push(
     `| 告警压缩比（整体） | ${agg.compression.toFixed(1)}:1 | ≥ 8:1 | ${verdict(agg.compression >= TARGETS.compression)} |`,
   );

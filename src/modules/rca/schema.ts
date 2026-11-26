@@ -22,7 +22,7 @@ export const EvidenceSchema = z.object({
   type: EvidenceTypeSchema,
   /** 必须是库内真实 id：alertId / changeId / linkId / caseId */
   ref: z.string().min(1),
-  desc: z.string().max(160),
+  desc: z.string().max(80),
 });
 
 export const ActionSchema = z.object({
@@ -35,9 +35,15 @@ export const HypothesisSchema = z.object({
   cause: z.string().min(4).max(120),
   category: HypothesisCategorySchema,
   confidence: z.number().min(0).max(1),
-  evidence: z.array(EvidenceSchema).min(1).max(8),
-  verifySteps: z.array(z.string().min(2).max(160)).min(1).max(5),
-  actions: z.array(ActionSchema).max(5),
+  /**
+   * 上限一律只收紧、不改类型不改必填性（Spec §3.6）：
+   * evidence 8→3、desc 160→80、verifySteps 5→3、actions 5→2。
+   * 收紧的是"说多少"，不是"能不能说" —— 前端仍按同一套字段渲染，
+   * 少写两条处置动作的信息损失，远小于一次被截断的调用。
+   */
+  evidence: z.array(EvidenceSchema).min(1).max(3),
+  verifySteps: z.array(z.string().min(2).max(160)).min(1).max(3),
+  actions: z.array(ActionSchema).max(2),
 });
 
 export const AnalysisResultSchema = z.object({

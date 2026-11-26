@@ -294,3 +294,63 @@ describe('汇总', () => {
     expect(answersOf(kase)).toHaveLength(2);
   });
 });
+
+describe('来源分账（Spec §4.5）', () => {
+  const withOrigin = (origin: 'LLM' | 'RULE_FALLBACK'): Observation =>
+    obs({
+      analyses: [
+        {
+          code: 'INC-1',
+          source: origin,
+          hypotheses: [
+            {
+              category: 'HARDWARE',
+              cause: 'CORE-SW-01 线卡故障',
+              confidence: 0.78,
+              deviceRefs: ['CORE-SW-01'],
+              origin,
+            },
+          ],
+          dropped: 0,
+          rawEvidence: 1,
+          validEvidence: 1,
+          durationMs: 20,
+          reasoningMs: origin === 'LLM' ? 5400 : 0,
+        },
+      ],
+    });
+
+  it('Top1 命中按第一名假设的来源分别计数', () => {
+    const agg = aggregate([
+      scoreCase(makeCase(), withOrigin('LLM')),
+      scoreCase(makeCase({ id: 'dev-02' }), withOrigin('RULE_FALLBACK')),
+    ]);
+    expect(agg.top1ByOrigin.LLM).toBe(1);
+    expect(agg.top1ByOrigin.RULE_FALLBACK).toBe(1);
+  });
+
+  it('逐假设 origin 透传到 CaseScore.top1Origin', () => {
+    expect(scoreCase(makeCase(), withOrigin('LLM')).top1Origin).toBe('LLM');
+    expect(scoreCase(makeCase(), obs()).top1Origin).toBeNull();
+  });
+
+  it('朴素基线命中单独计数，与规则/模型的 Top1 无关', () => {
+    const hitBaseline = obs({ hintOnly: [{ category: 'HARDWARE', device: 'CORE-SW-01' }] });
+    expect(scoreCase(makeCase(), hitBaseline).hintOnlyTop1).toBe(true);
+
+    const missBaseline = obs({ hintOnly: [{ category: 'LINK', device: 'ACC-SW-19' }] });
+    expect(scoreCase(makeCase(), missBaseline).hintOnlyTop1).toBe(false);
+
+    const agg = aggregate([scoreCase(makeCase(), hitBaseline)]);
+    expect(agg.hintOnlyTop1).toEqual({ hits: 1, total: 1 });
+  });
+
+  it('REASONING 均值只统计真的跑过模型的事件（规则引擎不稀释均值）', () => {
+    const agg = aggregate([
+      scoreCase(makeCase(), withOrigin('LLM')),
+      scoreCase(makeCase({ id: 'dev-02' }), withOrigin('RULE_FALLBACK')),
+    ]);
+    expect(agg.reasoning.avgMs).toBe(5400);
+    expect(agg.reasoning.p95Ms).toBe(5400);
+  });
+});

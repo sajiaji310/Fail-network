@@ -59,7 +59,12 @@ function response(over: Partial<Record<string, unknown>> = {}) {
 /** 全部告警类型未登记、无事件前变更 = R1 命中形态 */
 const r1Ctx: ContextBundle = {
   ...ctx,
-  alerts: ctx.alerts.map((a, i) => ({ ...a, id: `u-${i}`, type: `UNKNOWN_${i}`, alertClass: 'UNKNOWN' as const })),
+  alerts: ctx.alerts.map((a, i) => ({
+    ...a,
+    id: `u-${i}`,
+    type: `UNKNOWN_${i}`,
+    alertClass: 'UNKNOWN' as const,
+  })),
   changes: ctx.changes.filter((c) => !c.beforeFirstAlert),
 };
 

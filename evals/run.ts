@@ -11,10 +11,13 @@
  *
  * LLM_MOCK 必须在 `lib/env` 首次求值前写入，故业务模块全部动态 import。
  */
+import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadEnvFile } from 'node:process';
 import type { LinkStatus } from '@prisma/client';
+import { classifyAlertType } from '../src/modules/alerts/taxonomy';
+import { attributionTag } from '../src/modules/rca/explainability';
 import { assessTopology } from '../src/modules/topology/completeness';
 import { aggregate, scoreCase, type Observation, type ObservedHypothesis } from './metrics';
 import { renderMarkdown, type EvalReport } from './report';
@@ -28,6 +31,17 @@ try {
 
 const DATASET_DIR = path.join(process.cwd(), 'evals', 'dataset');
 const RESULT_DIR = path.join(process.cwd(), 'evals', 'results');
+
+/**
+ * test 集冻结参数（Spec §4.1/§4.3）。
+ *
+ * 16 例 = 14 例有标注根因 + 2 例必须拒答。这两个分母写死在这里而不是从数据里推：
+ * 有人偷偷删掉一个难例，总数就从 16 变 15、分母从 14 变 13，分数会"自动变好"。
+ * 冻结的意义就是让这种改动必须显式改这个常量，从而在 review 里被看见。
+ */
+const TEST_TOTAL = 16;
+const TEST_ANSWERABLE = 14;
+const TEST_ABSTAIN = 2;
 
 type Options = {
   set: 'dev' | 'test' | 'all';
@@ -59,6 +73,68 @@ function parseOptions(argv: readonly string[]): Options {
     verbose: argv.includes('--verbose'),
     write: !argv.includes('--no-write'),
   };
+}
+
+const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
+
+/**
+ * 归一化后再算哈希：Windows 上 `core.autocrlf` 会在 checkout 时把 LF 换成 CRLF，
+ * 直接对字节做摘要会让同一份数据在不同机器上算出不同哈希，冻结机制反而变成"环境检测器"。
+ * 只抹平换行符，内容差异照旧能检出。
+ */
+const normalizedSha256 = (file: string): string =>
+  sha256(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'));
+
+/**
+ * test 集冻结校验（Spec §4.3）：
+ *   1. 16 个 JSON 的哈希必须与 `MANIFEST.sha256` 逐行一致；
+ *   2. 分母必须是 14 有标注 + 2 拒答。
+ * 任一不符直接非 0 退出 —— 一份被改过的留出集跑出来的分数，比没有分数更危险。
+ *
+ * 只在**跑全集**时校验分母：`--only` 是调参用的过滤视图，它天然不是 14/2。
+ */
+function verifyTestSet(all: readonly EvalCase[], filtered: boolean): string {
+  const dir = path.join(DATASET_DIR, 'test');
+  const manifestPath = path.join(dir, 'MANIFEST.sha256');
+  const manifest = readFileSync(manifestPath, 'utf8').replace(/\r\n/g, '\n');
+  const expected = new Map<string, string>();
+  for (const line of manifest.split('\n')) {
+    const match = /^([0-9a-f]{64})\s+(\S+\.json)$/.exec(line.trim());
+    if (!match) continue;
+    expected.set(match[2]!, match[1]!);
+  }
+
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  const problems: string[] = [];
+  for (const file of files) {
+    const actual = normalizedSha256(path.join(dir, file));
+    const wanted = expected.get(file);
+    if (!wanted) problems.push(`${file}: 清单里没有这一行`);
+    else if (wanted !== actual)
+      problems.push(`${file}: 哈希不符（清单 ${wanted.slice(0, 8)}，实际 ${actual.slice(0, 8)}）`);
+  }
+  for (const file of expected.keys()) {
+    if (!files.includes(file)) problems.push(`${file}: 清单里有，磁盘上没有`);
+  }
+
+  const testCases = all.filter((c) => c.set === 'test');
+  const answerable = testCases.filter((c) => c.expect.rootCause !== null).length;
+  const abstain = testCases.length - answerable;
+  if (!filtered) {
+    if (testCases.length !== TEST_TOTAL) {
+      problems.push(`test 集 ${testCases.length} 例，冻结值为 ${TEST_TOTAL}`);
+    }
+    if (answerable !== TEST_ANSWERABLE || abstain !== TEST_ABSTAIN) {
+      problems.push(`分母 ${answerable}/${abstain}，冻结值为 ${TEST_ANSWERABLE}/${TEST_ABSTAIN}`);
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`test 集冻结校验失败：\n  - ${problems.join('\n  - ')}`);
+  }
+  return sha256(manifest);
 }
 
 function loadCases(set: Options['set']): EvalCase[] {
@@ -99,6 +175,8 @@ async function main() {
   const { runAnalysis } = await import('@/modules/rca/analyze');
 
   const all = loadCases(options.set);
+  // 冻结校验先于任何数据库操作：留出集被改过就别跑了，跑出来的数字不能用
+  const manifestDigest = options.set === 'dev' ? null : verifyTestSet(all, options.only.length > 0);
   const cases = options.only.length === 0 ? all : all.filter((c) => options.only.includes(c.id));
   if (cases.length === 0) throw new Error('没有匹配的场景，检查 --set / --only');
 
@@ -163,7 +241,10 @@ async function main() {
           alerts: {
             where: { status: { not: 'SUPPRESSED' } },
             select: {
-              fingerprint: { select: { deviceId: true, device: { select: { name: true } } } },
+              firstSeen: true,
+              fingerprint: {
+                select: { type: true, deviceId: true, device: { select: { name: true } } },
+              },
             },
           },
         },
@@ -213,17 +294,34 @@ async function main() {
       }
 
       const analyses = [];
+      const hintOnly: { category: string; device: string }[] = [];
       for (const incident of incidents) {
+        // 朴素基线：最早告警的设备 + 该类型的归因标签。不调模型、不看拓扑，只用时间与字典
+        const earliest = [...incident.alerts].sort(
+          (a, b) => a.firstSeen.getTime() - b.firstSeen.getTime(),
+        )[0];
+        if (earliest) {
+          hintOnly.push({
+            category: attributionTag(
+              earliest.fingerprint.type,
+              classifyAlertType(earliest.fingerprint.type),
+            ),
+            device: earliest.fingerprint.device.name,
+          });
+        }
+
         const began = Date.now();
         const outcome = await runAnalysis(incident.id, { force: true });
         const durationMs = Date.now() - began;
         if (!outcome) throw new Error(`${kase.id}: 事件 ${incident.code} 研判返回 null`);
 
-        const hypotheses: ObservedHypothesis[] = outcome.hypotheses.map((h) => ({
+        const hypotheses: ObservedHypothesis[] = outcome.hypotheses.map((h, index) => ({
           category: h.category,
           cause: h.cause,
           confidence: h.confidence,
           deviceRefs: [...new Set(h.evidence.flatMap((e) => deviceOfRef.get(e.ref) ?? []))],
+          // 逐条取来源：补位之后同一份结论里会混着两种来源，按事件取第一个分析会失真
+          origin: outcome.hypothesesOrigin?.[index],
         }));
 
         analyses.push({
@@ -236,6 +334,8 @@ async function main() {
           durationMs,
           tokensUsed: outcome.tokensUsed,
           topologyLevel: outcome.topologyLevel,
+          reasoningMs:
+            outcome.progress?.stages.find((s) => s.stage === 'REASONING')?.durationMs ?? 0,
         });
       }
 
@@ -265,6 +365,7 @@ async function main() {
         orphanAlerts,
         topologyLevel: coverage?.level ?? null,
         analyses,
+        hintOnly,
       };
 
       const score = scoreCase(kase, observation);
@@ -291,6 +392,8 @@ async function main() {
       mode: reportedMode,
       startedAt: startedAt.toISOString(),
       durationMs: Date.now() - startedAt.getTime(),
+      // test 集必须能自证"跑的是哪一版留出集"：哈希打在报告头部，抄进文档后无法悄悄换数据
+      manifest: manifestDigest ? manifestDigest.slice(0, 12) : undefined,
     },
     scores,
     agg: aggregate(scores),

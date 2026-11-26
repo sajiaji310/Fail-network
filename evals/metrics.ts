@@ -6,12 +6,20 @@ import type { TopologyLevel } from '../src/modules/topology/completeness';
  * 这样打分规则本身可以被单测锁住，不会出现"跑分脚本改了，分数就悄悄变好"。
  */
 
+export type HypothesisOrigin = 'LLM' | 'RULE_FALLBACK';
+
 export type ObservedHypothesis = {
   category: string;
   cause: string;
   confidence: number;
   /** 证据指向的设备名（由 run 阶段把 ref 解析成设备名后传入） */
   deviceRefs: string[];
+  /**
+   * 这条假设是谁给的（Spec §4.5）。
+   * 必须逐条记，不能用"该事件第一个分析的 source"代替：空结论补位之后，
+   * 同一份结论里可能一半来自模型、一半来自规则引擎，混在一起报会把提升归错账。
+   */
+  origin?: HypothesisOrigin;
 };
 
 export type ObservedAnalysis = {
@@ -25,6 +33,11 @@ export type ObservedAnalysis = {
   /** 本次研判的 token 用量（规则引擎为 null；老数据可能没有这个字段） */
   tokensUsed?: number | null;
   topologyLevel?: TopologyLevel;
+  /**
+   * REASONING 阶段耗时（模型调用那一段）。
+   * 与 durationMs 分开：后者含取数、校验与落库，用它定模型性能目标会把 DB 耗时算成模型问题。
+   */
+  reasoningMs?: number;
 };
 
 export type Observation = {
@@ -38,6 +51,12 @@ export type Observation = {
   /** 整个场景的拓扑完整度（没有事件时为 null） */
   topologyLevel: TopologyLevel | null;
   analyses: ObservedAnalysis[];
+  /**
+   * 朴素基线候选（每个事件一条）：「最早告警的设备 + 该告警类型的归因标签」。
+   * 用来回答"提示词与规则到底比不要模型强多少"—— 若这个基线就接近 Top1，
+   * 说明提升来自问题本身简单，而不是我们做了什么。
+   */
+  hintOnly?: { category: string; device: string }[];
 };
 
 export type CaseScore = {
@@ -75,6 +94,12 @@ export type CaseScore = {
   /** 本次研判消耗的 token；规则引擎为 0 */
   tokens: number;
   topologyLevel: TopologyLevel | null;
+  /** 排名第一那条假设的来源（无假设时为 null）：来源分账按它统计 */
+  top1Origin: HypothesisOrigin | null;
+  /** 「最早告警设备 + 字典类别」的朴素基线是否命中（Spec §4.5） */
+  hintOnlyTop1: boolean;
+  /** REASONING 阶段耗时合计（各事件求和） */
+  reasoningMs: number;
   /** 人读的失败原因，空表示通过 */
   failures: string[];
 };
@@ -104,6 +129,13 @@ export function scoreCase(kase: EvalCase, obs: Observation): CaseScore {
   const top3 = hit([...top1List, ...hypotheses]);
   const emptyCorrect = !expectAnswer && hypotheses.length === 0;
   const emptyButExpectedAnswer = expectAnswer && hypotheses.length === 0;
+
+  // 朴素基线：只看最早告警的设备与该类型的归因标签，不调模型、不看拓扑
+  const hintOnlyTop1 =
+    answers.length > 0 &&
+    (obs.hintOnly ?? []).some((hint) =>
+      answers.some((a) => a.category === hint.category && a.device === hint.device),
+    );
 
   const deviceCovered =
     kase.expect.rootCause === null
@@ -162,6 +194,9 @@ export function scoreCase(kase: EvalCase, obs: Observation): CaseScore {
     handlingUnits: incidentTotal + obs.orphanAlerts,
     tokens: obs.analyses.reduce((sum, a) => sum + (a.tokensUsed ?? 0), 0),
     topologyLevel: obs.topologyLevel,
+    top1Origin: top1List[0]?.origin ?? null,
+    hintOnlyTop1,
+    reasoningMs: obs.analyses.reduce((sum, a) => sum + (a.reasoningMs ?? 0), 0),
     failures,
   };
 }
@@ -219,8 +254,18 @@ export type Aggregate = {
   evidenceRate: number;
   avgDurationMs: number;
   p95DurationMs: number;
+  /** REASONING 阶段耗时（模型那一段）：延迟门禁落在它身上，不落整条 runAnalysis */
+  reasoning: { avgMs: number; p95Ms: number };
   totalTokens: number;
   fallbackRate: number;
+  /**
+   * Top1 命中按"第一名假设的来源"分账（Spec §4.5）。
+   * origin=LLM 的 Top1 是来源披露指标：它低说明总分里有规则补位的成分，
+   * 交付报告必须说清楚，不能只报一个好看的合计数。
+   */
+  top1ByOrigin: Record<HypothesisOrigin | 'UNKNOWN', number>;
+  /** 「最早告警设备 + 字典类别」的朴素基线命中数（分母 = 有标注根因的 case 数） */
+  hintOnlyTop1: { hits: number; total: number };
   passed: number;
 };
 
@@ -290,6 +335,22 @@ export function aggregate(scores: readonly CaseScore[]): Aggregate {
   const p95 =
     durations.length === 0 ? 0 : durations[Math.max(0, Math.ceil(durations.length * 0.95) - 1)]!;
 
+  // REASONING 阶段只统计真的跑过模型的事件（规则引擎的 reasoning≈0，会把均值稀释成好看的数字）
+  const reasoningDurations = scores
+    .filter((s) => s.source !== null && s.reasoningMs > 0)
+    .map((s) => s.reasoningMs)
+    .sort((a, b) => a - b);
+  const reasoningP95 =
+    reasoningDurations.length === 0
+      ? 0
+      : reasoningDurations[Math.max(0, Math.ceil(reasoningDurations.length * 0.95) - 1)]!;
+
+  const top1ByOrigin: Aggregate['top1ByOrigin'] = { LLM: 0, RULE_FALLBACK: 0, UNKNOWN: 0 };
+  for (const s of withAnswer) {
+    if (!s.top1) continue;
+    top1ByOrigin[s.top1Origin ?? 'UNKNOWN'] += 1;
+  }
+
   return {
     total: scores.length,
     byKind,
@@ -325,11 +386,22 @@ export function aggregate(scores: readonly CaseScore[]): Aggregate {
         Math.max(1, scores.filter((s) => s.source).length),
     ),
     p95DurationMs: p95,
+    reasoning: {
+      avgMs: Math.round(
+        reasoningDurations.reduce((sum, v) => sum + v, 0) / Math.max(1, reasoningDurations.length),
+      ),
+      p95Ms: reasoningP95,
+    },
     totalTokens: scores.reduce((sum, s) => sum + s.tokens, 0),
     fallbackRate: round(
       scores.filter((s) => s.source === 'RULE_FALLBACK').length /
         Math.max(1, scores.filter((s) => s.source).length),
     ),
+    top1ByOrigin,
+    hintOnlyTop1: {
+      hits: withAnswer.filter((s) => s.hintOnlyTop1).length,
+      total: withAnswer.length,
+    },
     passed: scores.filter((s) => s.failures.length === 0).length,
   };
 }

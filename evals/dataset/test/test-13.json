@@ -1,0 +1,78 @@
+{
+  "id": "test-13",
+  "set": "test",
+  "kind": "POSITIVE",
+  "title": "两个上游候选里选对设备",
+  "note": "正例：核心路由邻居异常与汇聚 DNS 超时同属上游族，考在两台候选设备之间选对根因设备，而不是只说对「是上游问题」",
+  "scenario": {
+    "name": "test-upstream-pick",
+    "title": "核心路由邻居反复重建，汇聚 DNS 超时",
+    "description": "CORE-SW-01 的 BGP/OSPF 邻居反复重建并伴随出口时延升高；AGG-SW-02 同时出现 DNS 解析超时，是核心侧路由异常传导的结果。",
+    "rootCauseHint": "CORE-SW-01 路由邻居异常导致上游可达性下降",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P1",
+        "metric": "203.0.113.1",
+        "count": 4,
+        "message": "CORE-SW-01 BGP 邻居 4 次 Down",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "OSPF_NEIGHBOR_DOWN",
+        "severity": "P1",
+        "metric": "10.0.1.11",
+        "message": "CORE-SW-01 OSPF 邻居 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "DNS_TIMEOUT",
+        "severity": "P2",
+        "metric": "dns_latency",
+        "value": 2400,
+        "threshold": 200,
+        "message": "AGG-SW-02 递归解析超时 2400ms",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt_203.0.113.1",
+        "value": 460,
+        "threshold": 100,
+        "message": "CORE-SW-01 到运营商网关时延 460ms",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-03",
+        "type": "DNS_TIMEOUT",
+        "severity": "P2",
+        "metric": "dns_latency",
+        "value": 1900,
+        "threshold": 200,
+        "message": "ACC-SW-03 解析超时 1900ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-07",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 380,
+        "threshold": 50,
+        "message": "ACC-SW-07 外网访问时延 380ms",
+        "minuteFromStart": 4
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "UPSTREAM", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "BGP_NEIGHBOR_DOWN" }
+  }
+}

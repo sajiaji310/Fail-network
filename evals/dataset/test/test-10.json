@@ -1,0 +1,113 @@
+{
+  "id": "test-10",
+  "set": "test",
+  "kind": "POSITIVE",
+  "title": "大部分告警已登记，混入三条未登记采集项",
+  "note": "正例边界：10 条告警里 3 条是未登记采集项，7 条已登记且指向核心线卡。只要存在可归因告警就不许拒答，也不能被未登记项带偏",
+  "scenario": {
+    "name": "test-partial-unknown",
+    "title": "核心线卡故障，同时有未登记采集项越限",
+    "description": "CORE-SW-01 线卡 3 故障导致多台汇聚上联中断；同一时段 ACC-SW-20 上有三个未登记采集项越限，与本次故障无因果关系。",
+    "rootCauseHint": "CORE-SW-01 线卡硬件故障",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "CORE-SW-01",
+        "type": "LINECARD_FAILURE",
+        "severity": "P0",
+        "metric": "Slot3",
+        "message": "线卡 3 硬件故障",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "AGG-SW-03 上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-04",
+        "type": "LINK_DOWN",
+        "severity": "P1",
+        "metric": "Ten-GigabitEthernet1/0/49",
+        "message": "AGG-SW-04 上联端口 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-03",
+        "type": "BGP_NEIGHBOR_DOWN",
+        "severity": "P1",
+        "metric": "10.0.0.1",
+        "message": "AGG-SW-03 到核心的 BGP 邻居 Down",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 12.4,
+        "threshold": 1,
+        "message": "ACC-SW-02 上联丢包率 12.4%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 8.9,
+        "threshold": 1,
+        "message": "ACC-SW-06 上联丢包率 8.9%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P2",
+        "metric": "rtt",
+        "value": 420,
+        "threshold": 50,
+        "message": "ACC-SW-10 到网关时延 420ms",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_A",
+        "severity": "P2",
+        "metric": "sensor_a",
+        "value": 71,
+        "threshold": 60,
+        "message": "ACC-SW-20 采集项 A 越限",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_B",
+        "severity": "P3",
+        "metric": "sensor_b",
+        "value": 34,
+        "threshold": 30,
+        "message": "ACC-SW-20 采集项 B 越限",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-20",
+        "type": "UNKNOWN_SENSOR_C",
+        "severity": "P3",
+        "metric": "sensor_c",
+        "value": 22,
+        "threshold": 10,
+        "message": "ACC-SW-20 采集项 C 越限",
+        "minuteFromStart": 4
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "HARDWARE", "device": "CORE-SW-01" },
+    "rootAlert": { "device": "CORE-SW-01", "type": "LINECARD_FAILURE" }
+  }
+}

@@ -103,7 +103,9 @@ describe('isExplainedType 与旧实现等值', () => {
 });
 
 describe('categoryOfType 与旧实现等值（全部真实类型 × 4 个告警类别）', () => {
-  const cases = REAL_TYPES.flatMap((type) => CLASSES.map((alertClass) => [type, alertClass] as const));
+  const cases = REAL_TYPES.flatMap((type) =>
+    CLASSES.map((alertClass) => [type, alertClass] as const),
+  );
 
   it.each(cases)('%s / %s', (type, alertClass) => {
     const legacy = legacyCategoryOf(type, alertClass);

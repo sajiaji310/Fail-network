@@ -315,7 +315,9 @@ export function ruleFallback(ctx: ContextBundle): AnalysisResult {
       cause: causeOf(candidate.deviceName, candidate.alert, candidate.change),
       category,
       confidence: Math.round(confidence * 1000) / 1000,
-      evidence: evidence.slice(0, 4),
+      // 3 条是输出契约的上限（Spec §3.6）：规则引擎的输出同样要能过 schema，
+      // 否则无 key 环境的结论会被自己的校验器/缓存读取判为不可用
+      evidence: evidence.slice(0, 3),
       verifySteps: verifyStepsOf(category, candidate.deviceName),
       actions: actionsOf(category, candidate.deviceName),
     };

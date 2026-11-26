@@ -1,0 +1,81 @@
+{
+  "id": "test-12",
+  "set": "test",
+  "kind": "POSITIVE",
+  "title": "汇聚会话数与 CPU 打满",
+  "note": "正例：资源过载（CAPACITY），本集此前缺失的类别。会话数、CPU、内存三项同时越限，下游丢包是连带现象，考不把资源耗尽判成链路故障",
+  "scenario": {
+    "name": "test-capacity-exhaustion",
+    "title": "汇聚交换机会话表打满",
+    "description": "AGG-SW-02 会话数、CPU、内存同时越限，下挂接入大量丢包；没有硬件告警，也没有变更，是典型的容量问题。",
+    "rootCauseHint": "AGG-SW-02 会话表耗尽导致转发能力下降",
+    "changes": [],
+    "alerts": [
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "SESSION_HIGH",
+        "severity": "P1",
+        "metric": "session.util",
+        "value": 98,
+        "threshold": 85,
+        "message": "AGG-SW-02 会话表使用率 98%",
+        "minuteFromStart": 0
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "CPU_HIGH",
+        "severity": "P2",
+        "metric": "cpu.util",
+        "value": 94,
+        "threshold": 80,
+        "message": "AGG-SW-02 CPU 使用率 94%",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "AGG-SW-02",
+        "type": "MEMORY_HIGH",
+        "severity": "P2",
+        "metric": "mem.util",
+        "value": 91,
+        "threshold": 80,
+        "message": "AGG-SW-02 内存使用率 91%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-02",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 6.8,
+        "threshold": 1,
+        "message": "ACC-SW-02 上联丢包率 6.8%",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-06",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 5.2,
+        "threshold": 1,
+        "message": "ACC-SW-06 上联丢包率 5.2%",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-10",
+        "type": "HIGH_LATENCY",
+        "severity": "P3",
+        "metric": "rtt",
+        "value": 210,
+        "threshold": 50,
+        "message": "ACC-SW-10 到网关时延 210ms",
+        "minuteFromStart": 3
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 1,
+    "rootCause": { "category": "CAPACITY", "device": "AGG-SW-02" },
+    "rootAlert": { "device": "AGG-SW-02", "type": "SESSION_HIGH" }
+  }
+}

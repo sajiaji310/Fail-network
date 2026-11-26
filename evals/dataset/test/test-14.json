@@ -1,0 +1,84 @@
+{
+  "id": "test-14",
+  "set": "test",
+  "kind": "ADVERSARIAL",
+  "title": "双故障：一处由事前变更引起，一处由介质劣化引起",
+  "note": "对抗例：两处故障相距 4 跳，必须拆成 2 个事件；标注答案取第 0 分钟由变更引发的那一处（CONFIG），考在双故障同时发生时仍能把变更与告警的时间关系用对",
+  "scenario": {
+    "name": "test-dual-fault",
+    "title": "接入批量配置误下发与另一台接入光模块劣化",
+    "description": "第 0 分钟有人在 ACC-SW-19 上批量下发端口配置，接口范围写错导致该设备端口成批 DOWN；同一时段另一端 ACC-SW-25 的光模块劣化，链路抖动并丢包。两处相距 4 跳，是两起独立故障。",
+    "rootCauseHint": "ACC-SW-19 配置误下发导致端口批量 DOWN",
+    "changes": [
+      {
+        "deviceName": "ACC-SW-19",
+        "kind": "CONFIG",
+        "content": "批量下发端口配置，接口范围写成 Gi1/0/1-24（应为 Gi1/0/25）",
+        "operator": "wangtao",
+        "minuteFromStart": 0
+      }
+    ],
+    "alerts": [
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "PORT_DOWN",
+        "severity": "P1",
+        "metric": "Gi1/0/1-24",
+        "count": 24,
+        "message": "ACC-SW-19 上 24 个业务端口同时 Down",
+        "minuteFromStart": 1
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "INTERFACE_ERROR",
+        "severity": "P2",
+        "metric": "Gi1/0/1",
+        "message": "ACC-SW-19 端口状态异常",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-19",
+        "type": "LINK_DOWN",
+        "severity": "P2",
+        "metric": "Gi1/0/25",
+        "message": "ACC-SW-19 上联端口 Down",
+        "minuteFromStart": 2
+      },
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "OPTICAL_RX_LOW",
+        "severity": "P2",
+        "metric": "rx_power",
+        "value": -19.2,
+        "threshold": -16,
+        "message": "ACC-SW-25 收光 -19.2dBm",
+        "minuteFromStart": 3
+      },
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "PORT_FLAP",
+        "severity": "P2",
+        "metric": "flap_count",
+        "value": 8,
+        "threshold": 3,
+        "message": "ACC-SW-25 端口抖动 8 次",
+        "minuteFromStart": 4
+      },
+      {
+        "deviceName": "ACC-SW-25",
+        "type": "PACKET_LOSS",
+        "severity": "P2",
+        "metric": "uplink",
+        "value": 13.5,
+        "threshold": 1,
+        "message": "ACC-SW-25 上联丢包率 13.5%",
+        "minuteFromStart": 5
+      }
+    ]
+  },
+  "expect": {
+    "incidents": 2,
+    "rootCause": { "category": "CONFIG", "device": "ACC-SW-19" },
+    "rootAlert": { "device": "ACC-SW-19", "type": "PORT_DOWN" }
+  }
+}

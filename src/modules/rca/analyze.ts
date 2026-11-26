@@ -179,7 +179,9 @@ export async function runAnalysis(
       degradedReason: produced.degradedReason,
       summary: produced.result.summary,
       impactScope: produced.result.impactScope,
-      missingInfo: [...new Set([...produced.result.missingInfo, ...clearanceMissingInfo(gate.cleared)])],
+      missingInfo: [
+        ...new Set([...produced.result.missingInfo, ...clearanceMissingInfo(gate.cleared)]),
+      ],
     });
 
     // 缺拓扑时一律压低置信度（评审 P0-4）：上限由完整度决定，不是模型自己说了算。
