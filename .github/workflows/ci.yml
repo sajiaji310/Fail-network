@@ -17,6 +17,8 @@ jobs:
           --health-cmd "pg_isready -U netscope" --health-interval 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://netscope:netscope@localhost:5432/netscope
+      # CI 默认 UTC；项目面向国内运维，时间类断言与展示统一按北京时间
+      TZ: Asia/Shanghai
       LLM_MOCK: 'true'
     steps:
       - uses: actions/checkout@v4

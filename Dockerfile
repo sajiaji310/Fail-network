@@ -27,7 +27,8 @@ RUN apk add --no-cache tini curl
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000
+    PORT=3000 \
+    TZ=Asia/Shanghai
 
 # 运行期需要：构建产物 + prisma（migrate deploy）+ scripts（seed）+ src/tsconfig（tsx 跑 seed）
 COPY --from=builder /app/node_modules ./node_modules

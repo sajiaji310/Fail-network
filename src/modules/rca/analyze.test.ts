@@ -15,6 +15,7 @@ import { parseAnalysisMeta } from './schema';
  */
 
 const savedLlmKey = env.LLM_API_KEY;
+const savedLlmMock = env.LLM_MOCK;
 
 const BASE = new Date('2026-11-11T03:00:00Z');
 const at = (minutes: number) => new Date(BASE.getTime() + minutes * 60_000);
@@ -58,6 +59,8 @@ async function alertFor(
 
 beforeAll(async () => {
   env.LLM_API_KEY = '';
+  // CI 可能设了 LLM_MOCK=true；本文件要验证「无 key 走规则降级」，mock 会抢先生效
+  env.LLM_MOCK = 'false';
   const agg = await db.device.findUnique({
     where: { tenantId_name: { tenantId: 'default', name: 'AGG-SW-02' } },
     select: { id: true },
@@ -97,6 +100,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   env.LLM_API_KEY = savedLlmKey;
+  env.LLM_MOCK = savedLlmMock;
   await db.alert.deleteMany({ where: { incidentId } });
   await db.incident.deleteMany({ where: { id: incidentId } });
   await db.changeRecord.deleteMany({ where: { id: changeId } });

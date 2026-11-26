@@ -1,4 +1,3 @@
-import { format } from 'date-fns';
 import { duration } from '@/lib/utils/time';
 
 /**
@@ -90,7 +89,22 @@ const BASELINE_IMPROVEMENTS = [
   '把本次场景固化为可注入的演练剧本，纳入月度演练，验证告警聚合与研判链路是否仍然有效。',
 ];
 
-const stamp = (value: Date) => format(value, 'yyyy-MM-dd HH:mm:ss');
+/**
+ * 报告是归档文档，时间固定按北京时间展示，不随部署环境时区漂移。
+ * 容器默认 UTC，用 date-fns 的本地时区格式化会整体差 8 小时。
+ */
+const REPORT_TIME_ZONE = 'Asia/Shanghai';
+const stamp = (value: Date) =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: REPORT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(value);
 
 /** Markdown 表格单元格转义：内容里的竖线会把表结构切断 */
 const cell = (value: string) => value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
