@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { readTextLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
+import { replayCorrelation } from '@/modules/correlation/replay';
 import { runCorrelation } from '@/modules/correlation/service';
 
 export const dynamic = 'force-dynamic';
@@ -14,8 +16,20 @@ const BodySchema = z
   .object({
     /** 仅调试用：用指定时刻作为聚合基准，便于复现历史窗口 */
     now: z.coerce.date().optional(),
+    /** 与 to 成对出现：按告警自己的时间重放聚合，不改时间戳 */
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
   })
-  .default({});
+  .default({})
+  .superRefine((value, ctx) => {
+    const hasReplay = value.from !== undefined || value.to !== undefined;
+    if (hasReplay && (value.from === undefined || value.to === undefined)) {
+      ctx.addIssue({ code: 'custom', message: '回放需要同时给出 from 和 to', path: ['from'] });
+    }
+    if (hasReplay && value.now !== undefined) {
+      ctx.addIssue({ code: 'custom', message: '回放不要再传 now', path: ['now'] });
+    }
+  });
 
 /**
  * POST /api/v1/correlation/run
@@ -38,16 +52,20 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       throw new AppError(
         'VALIDATION_FAILED',
-        '请求体不合法：期望空 body 或 { now?: ISO8601 }',
+        '请求体不合法：期望空 body、{ now?: ISO8601 }，或 { from, to }',
         parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`),
       );
     }
 
+    const data = parsed.data;
+    const replaying = data.from !== undefined && data.to !== undefined;
     const summary = await audited(
       req,
       {
-        action: 'correlation.run',
-        target: parsed.data.now?.toISOString() ?? 'now',
+        action: replaying ? 'correlation.replay' : 'correlation.run',
+        target: replaying
+          ? `${data.from!.toISOString()}..${data.to!.toISOString()}`
+          : (data.now?.toISOString() ?? 'now'),
         detailOf: (r) => ({
           created: r.created.length,
           updated: r.updated.length,
@@ -57,7 +75,23 @@ export async function POST(req: Request) {
         }),
         requestId: traceId,
       },
-      () => runCorrelation(parsed.data.now),
+      async () => {
+        if (replaying) {
+          try {
+            return await replayCorrelation({
+              from: data.from!,
+              to: data.to!,
+              tenantId: tenantOf(req),
+            });
+          } catch (error) {
+            throw new AppError(
+              'VALIDATION_FAILED',
+              error instanceof Error ? error.message : '回放参数不合法',
+            );
+          }
+        }
+        return runCorrelation(data.now, tenantOf(req));
+      },
     );
     log.info('correlation_done', {
       traceId,

@@ -49,18 +49,21 @@ export function maxSeverityOf(list: readonly Severity[]): Severity | null {
   return best;
 }
 
-export async function getTopologyGraph(): Promise<TopologyGraph> {
-  const [devices, links, alerts] = await Promise.all([
-    db.device.findMany({
-      orderBy: [{ layer: 'asc' }, { name: 'asc' }],
-      select: { id: true, name: true, type: true, layer: true, site: true, ip: true },
-    }),
+export async function getTopologyGraph(tenantId = 'default'): Promise<TopologyGraph> {
+  const devices = await db.device.findMany({
+    where: { tenantId },
+    orderBy: [{ layer: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, type: true, layer: true, site: true, ip: true },
+  });
+  const deviceIds = devices.map((device) => device.id);
+  const [links, alerts] = await Promise.all([
     db.topologyLink.findMany({
+      where: { sourceId: { in: deviceIds }, targetId: { in: deviceIds } },
       orderBy: [{ sourceId: 'asc' }, { targetId: 'asc' }],
       select: { id: true, sourceId: true, targetId: true, bandwidth: true, status: true },
     }),
     db.alert.findMany({
-      where: { status: 'ACTIVE' },
+      where: { tenantId, status: 'ACTIVE' },
       select: {
         severity: true,
         fingerprint: { select: { deviceId: true } },

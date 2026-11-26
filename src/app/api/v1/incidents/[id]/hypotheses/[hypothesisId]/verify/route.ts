@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited, resolveActor } from '@/modules/audit/service';
@@ -54,6 +55,7 @@ export async function POST(
           note: parsed.data.note ?? null,
           // 操作者由服务端解析，不接受前端自称：验证记录是审计材料
           by: resolveActor(req),
+          tenantId: tenantOf(req),
         });
         if (!updated) throw new AppError('NOT_FOUND', `事件不存在：${id}`);
         return updated;

@@ -133,11 +133,11 @@ export function materialize(
   return { spec, runId, alerts, changes };
 }
 
-async function writeChanges(changes: MaterializedChange[]): Promise<number> {
+async function writeChanges(changes: MaterializedChange[], tenantId: string): Promise<number> {
   if (changes.length === 0) return 0;
   const names = [...new Set(changes.map((c) => c.deviceName))];
   const devices = await db.device.findMany({
-    where: { name: { in: names } },
+    where: { tenantId, name: { in: names } },
     select: { id: true, name: true },
   });
   const idByName = new Map(devices.map((d) => [d.name, d.id]));
@@ -178,14 +178,15 @@ export type SimulateResult = {
  */
 export async function runScenarioSpec(
   spec: ScenarioSpec,
-  opts: { seed?: number; now?: Date; source?: string } = {},
+  opts: { seed?: number; now?: Date; source?: string; tenantId?: string } = {},
 ): Promise<SimulateResult> {
   const materialized = materialize(spec, { seed: opts.seed, now: opts.now });
   const source = opts.source ?? `sim:${spec.name}`;
-  const ingest = await ingestAlerts(source, materialized.alerts);
-  const changes = await writeChanges(materialized.changes);
+  const tenantId = opts.tenantId ?? 'default';
+  const ingest = await ingestAlerts(source, materialized.alerts, { tenantId });
+  const changes = await writeChanges(materialized.changes, tenantId);
 
-  const correlation = await runCorrelation(opts.now);
+  const correlation = await runCorrelation(opts.now, tenantId);
   const incidentIds = [
     ...new Set([
       ...correlation.created.map((i) => i.id),
@@ -207,6 +208,10 @@ export async function runScenarioSpec(
 }
 
 /** 剧本注入：落告警 + 变更记录，然后立即聚合出事件（T05） */
-export async function runScenario(name: string, seed?: number): Promise<SimulateResult> {
-  return runScenarioSpec(loadScenario(name), { seed });
+export async function runScenario(
+  name: string,
+  seed?: number,
+  tenantId = 'default',
+): Promise<SimulateResult> {
+  return runScenarioSpec(loadScenario(name), { seed, tenantId });
 }

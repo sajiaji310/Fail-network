@@ -38,9 +38,10 @@ describe('resolveActor / resolveIp', () => {
     expect(resolveActor(request({ 'x-api-key': 'short' }))).toBe('api-key');
   });
 
-  it('取 x-forwarded-for 的第一跳', () => {
-    expect(resolveIp(request({ 'x-forwarded-for': '10.0.0.1, 10.0.0.2' }))).toBe('10.0.0.1');
-    expect(resolveIp(request())).toBeNull();
+  it('默认不采信可伪造的代理头；显式信任时才取第一跳', () => {
+    expect(resolveIp(request({ 'x-forwarded-for': '10.0.0.1, 10.0.0.2' }))).toBeNull();
+    expect(resolveIp(request({ 'x-forwarded-for': '10.0.0.1, 10.0.0.2' }), true)).toBe('10.0.0.1');
+    expect(resolveIp(request(), true)).toBeNull();
   });
 });
 

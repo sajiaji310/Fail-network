@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
@@ -34,7 +35,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         requestId: traceId,
       },
       async () => {
-        const generated = await generateReport(id, { save, note });
+        const generated = await generateReport(id, { save, note, tenantId: tenantOf(req) });
         if (!generated) {
           throw new AppError('NOT_FOUND', `事件不存在：${id}`);
         }
@@ -62,7 +63,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const traceId = crypto.randomUUID();
   try {
     const { id } = await ctx.params;
-    const report = await getLatestReport(id);
+    const report = await getLatestReport(id, tenantOf(_req));
     if (!report) {
       throw new AppError('NOT_FOUND', '该事件还没有生成过报告，请先 POST 生成');
     }

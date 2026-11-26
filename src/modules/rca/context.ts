@@ -46,18 +46,22 @@ export const CHANGE_LOOKBACK_HOURS = 24;
 /** 指标快照回看窗口：事件前 30 分钟足够看出爬升，不会把上下文预算吃光 */
 export const METRIC_LOOKBACK_MS = 30 * 60_000;
 
-export async function buildIncidentContext(idOrCode: string): Promise<ContextBundle | null> {
+export async function buildIncidentContext(
+  idOrCode: string,
+  tenantId = 'default',
+): Promise<ContextBundle | null> {
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: idOrCode }, { code: idOrCode }] },
+    where: { tenantId, OR: [{ id: idOrCode }, { code: idOrCode }] },
     include: { alerts: { include: { fingerprint: { include: { device: true } } } } },
   });
   if (!incident) return null;
 
   const [allLinks, allDevices] = await Promise.all([
     db.topologyLink.findMany({
+      where: { source: { tenantId }, target: { tenantId } },
       select: { id: true, sourceId: true, targetId: true, status: true },
     }),
-    db.device.findMany({ select: { id: true, name: true } }),
+    db.device.findMany({ where: { tenantId }, select: { id: true, name: true } }),
   ]);
   const graph = buildDeviceGraph(allLinks);
   const nameOf = new Map(allDevices.map((d) => [d.id, d.name]));
@@ -215,7 +219,7 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
   }));
 
   const alertTypes = [...new Set(incident.alerts.map((a) => a.fingerprint.type))];
-  const cases = await recallCases(alertTypes);
+  const cases = await recallCases(alertTypes, tenantId);
 
   const bundle: ContextBundle = {
     incident: {
@@ -255,9 +259,9 @@ export async function buildIncidentContext(idOrCode: string): Promise<ContextBun
  * 就会被下一轮研判当成"历史经验"引用，错误会自我放大。
  * UNVERIFIED 的案例在案例库里照常可查，只是不参与召回。
  */
-async function recallCases(alertTypes: string[]): Promise<ContextCase[]> {
+async function recallCases(alertTypes: string[], tenantId: string): Promise<ContextCase[]> {
   const rows = await db.caseRecord.findMany({
-    where: { verification: 'VERIFIED' },
+    where: { tenantId, verification: 'VERIFIED' },
     orderBy: { createdAt: 'desc' },
     take: 200,
     select: {

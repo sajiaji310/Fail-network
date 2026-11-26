@@ -20,11 +20,13 @@ const daysAgo = (days: number) => new Date(NOW.getTime() - days * 24 * 3600_000)
 describe.skipIf(!hasDb)('数据保留策略（依赖真实 DB）', () => {
   beforeAll(async () => {
     await db.device.upsert({
-      where: { name: DEVICE },
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
       create: { name: DEVICE, type: 'SWITCH', layer: 3, site: '测试' },
       update: {},
     });
-    const device = await db.device.findUniqueOrThrow({ where: { name: DEVICE } });
+    const device = await db.device.findUniqueOrThrow({
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
+    });
 
     await db.metricSample.deleteMany({ where: { deviceId: device.id } });
     await db.metricSample.createMany({
@@ -66,7 +68,9 @@ describe.skipIf(!hasDb)('数据保留策略（依赖真实 DB）', () => {
   });
 
   afterAll(async () => {
-    const device = await db.device.findUnique({ where: { name: DEVICE } });
+    const device = await db.device.findUnique({
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
+    });
     if (device) {
       await db.metricSample.deleteMany({ where: { deviceId: device.id } });
       await db.device.delete({ where: { id: device.id } });

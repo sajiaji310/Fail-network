@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
@@ -51,6 +52,7 @@ export async function PATCH(
           hypothesisId,
           verdict: parsed.data.verdict,
           note: parsed.data.note ?? null,
+          tenantId: tenantOf(req),
         });
         if (!updated) {
           throw new AppError('NOT_FOUND', `事件或假设不存在：${id} / ${hypothesisId}`);

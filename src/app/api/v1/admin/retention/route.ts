@@ -60,7 +60,7 @@ export async function POST(req: Request) {
         detailOf: (value) => ({ ...value.deleted }),
         requestId: traceId,
       },
-      () => runRetention({ dryRun: parsed.data.dryRun }),
+      () => runRetention({ dryRun: parsed.data.dryRun, tenantId: tenantOf(req) }),
     );
 
     return NextResponse.json(report, { headers: { 'x-trace-id': traceId } });

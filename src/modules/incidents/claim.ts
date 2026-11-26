@@ -24,6 +24,7 @@ export type ClaimInput = {
   /** 允许覆盖他人已接手的事件（转派） */
   force?: boolean;
   now?: Date;
+  tenantId?: string;
 };
 
 export type ClaimResult = {
@@ -60,7 +61,10 @@ export async function claimIncident(input: ClaimInput): Promise<ClaimResult | nu
   if (!assignee) throw new AppError('VALIDATION_FAILED', '接手人不能为空');
 
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.idOrCode }, { code: input.idOrCode }] },
+    where: {
+      tenantId: input.tenantId ?? 'default',
+      OR: [{ id: input.idOrCode }, { code: input.idOrCode }],
+    },
     select: SELECT,
   });
   if (!incident) return null;
@@ -122,9 +126,13 @@ export type ReleaseResult = {
 export async function releaseIncident(input: {
   idOrCode: string;
   now?: Date;
+  tenantId?: string;
 }): Promise<ReleaseResult | null> {
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.idOrCode }, { code: input.idOrCode }] },
+    where: {
+      tenantId: input.tenantId ?? 'default',
+      OR: [{ id: input.idOrCode }, { code: input.idOrCode }],
+    },
     select: { id: true, code: true, status: true, assignee: true },
   });
   if (!incident) return null;

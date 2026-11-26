@@ -41,6 +41,7 @@ function emptyResult(source: string): IngestResult {
     source,
     accepted: 0,
     deduped: 0,
+    resolved: 0,
     suppressed: 0,
     retroSuppressed: 0,
     autoClosedIncidents: 0,
@@ -52,6 +53,7 @@ function emptyResult(source: string): IngestResult {
 function mergeInto(target: IngestResult, chunk: IngestResult): void {
   target.accepted += chunk.accepted;
   target.deduped += chunk.deduped;
+  target.resolved += chunk.resolved;
   target.suppressed += chunk.suppressed;
   target.retroSuppressed += chunk.retroSuppressed;
   target.autoClosedIncidents += chunk.autoClosedIncidents;

@@ -99,8 +99,13 @@ function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-async function loadGraph(): Promise<DeviceGraph> {
-  const links = await db.topologyLink.findMany({ select: { sourceId: true, targetId: true } });
+async function loadGraph(tenantId: string): Promise<DeviceGraph> {
+  const devices = await db.device.findMany({ where: { tenantId }, select: { id: true } });
+  const ids = devices.map((device) => device.id);
+  const links = await db.topologyLink.findMany({
+    where: { sourceId: { in: ids }, targetId: { in: ids } },
+    select: { sourceId: true, targetId: true },
+  });
   return buildDeviceGraph(links);
 }
 
@@ -131,31 +136,39 @@ function toMergeCandidate(incident: LoadedIncident): MergeCandidate {
  *
  * 幂等：同一批告警重复执行，簇与 clusterKey 不变，命中的是同一个 Incident（AC-17）。
  */
-export async function runCorrelation(now: Date = new Date()): Promise<CorrelationSummary> {
+export async function runCorrelation(
+  now: Date = new Date(),
+  tenantId = 'default',
+): Promise<CorrelationSummary> {
   const startedAtMs = Date.now();
-  const graph = await loadGraph();
+  const graph = await loadGraph(tenantId);
   const followupHorizon = new Date(now.getTime() - FOLLOWUP_LOOKBACK_MS);
   const recurrenceHorizon = new Date(now.getTime() - RECURRENCE_LOOKBACK_MS);
 
   const [alertRows, incidentRows, closedRows] = await Promise.all([
     db.alert.findMany({
       where: {
+        tenantId,
         status: 'ACTIVE',
         // 只看"截至聚合时刻"仍活跃的告警：上界必须卡住，
         // 否则时钟偏差或历史基准测试会把未来的告警也拉进来
         lastSeen: { gte: followupHorizon, lte: now },
-        OR: [{ incidentId: null }, { incident: { status: { in: [...ACTIVE_INCIDENT_STATUSES] } } }],
+        OR: [
+          { incidentId: null },
+          { incident: { tenantId, status: { in: [...ACTIVE_INCIDENT_STATUSES] } } },
+        ],
       },
       orderBy: [{ firstSeen: 'asc' }, { id: 'asc' }],
       select: ALERT_SELECT,
     }),
     db.incident.findMany({
-      where: { status: { in: [...ACTIVE_INCIDENT_STATUSES] } },
+      where: { tenantId, status: { in: [...ACTIVE_INCIDENT_STATUSES] } },
       orderBy: [{ code: 'asc' }],
       select: INCIDENT_SELECT,
     }),
     db.incident.findMany({
       where: {
+        tenantId,
         status: { in: [...CLOSED_INCIDENT_STATUSES] },
         resolvedAt: { gte: recurrenceHorizon, lte: now },
       },
@@ -231,14 +244,8 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
       ? clusterKeyOf([...fingerprintIds, `reopen:${reopenedFromId}`])
       : clusterKeyOf(fingerprintIds);
 
-    let code = await nextIncidentCode(firstSeen);
+    let code = await nextIncidentCode(firstSeen, tenantId);
     const severity = maxSeverity(cluster.alerts.map((a) => a.severity));
-    // 事件租户由其告警所属设备决定（设备是租户隔离的根）
-    const owner = await db.alertFingerprint.findFirst({
-      where: { id: { in: fingerprintIds } },
-      select: { device: { select: { tenantId: true } } },
-    });
-    const tenantId = owner?.device.tenantId ?? 'default';
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const created = await db.incident.create({
@@ -262,8 +269,8 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
       } catch (error) {
         if (!isUniqueViolation(error)) throw error;
         // clusterKey 撞了（同簇已被别的事件占用）→ 直接并入已存在的那个
-        const sameKey = await db.incident.findUnique({
-          where: { clusterKey },
+        const sameKey = await db.incident.findFirst({
+          where: { clusterKey, tenantId },
           select: { id: true, code: true },
         });
         if (sameKey) {
@@ -271,7 +278,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
           return sameKey;
         }
         // 否则是当天编码撞了，重算一次
-        code = await nextIncidentCode(new Date(now.getTime() + attempt + 1));
+        code = await nextIncidentCode(new Date(now.getTime() + attempt + 1), tenantId);
       }
     }
     throw new Error('事件编码连续冲突，聚合中止');
@@ -381,8 +388,8 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
 
     // B8：clusterKey 命中 → 复用（重跑同一批数据必须落到同一个事件）
     const clusterKey = clusterKeyOf(cluster.alerts.map((a) => a.fingerprintId));
-    const byKey = await db.incident.findUnique({
-      where: { clusterKey },
+    const byKey = await db.incident.findFirst({
+      where: { clusterKey, tenantId },
       select: { id: true, code: true, status: true, lastSeen: true },
     });
     // 同簇但活跃事件已经静默超过二次收敛窗口 → 按"又发生一次"处理，
@@ -433,7 +440,7 @@ export async function runCorrelation(now: Date = new Date()): Promise<Correlatio
   // B3 / B7：事件级合并单独一遍（跨 run 产生的重复事件靠这里收口）
   for (let round = 0; round < 5; round++) {
     const rows = await db.incident.findMany({
-      where: { status: { in: [...ACTIVE_INCIDENT_STATUSES] } },
+      where: { tenantId, status: { in: [...ACTIVE_INCIDENT_STATUSES] } },
       orderBy: [{ code: 'asc' }],
       select: INCIDENT_SELECT,
     });

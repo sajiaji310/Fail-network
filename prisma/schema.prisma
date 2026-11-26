@@ -58,7 +58,7 @@ enum CaseVerification {
 
 model Device {
   id        String     @id @default(cuid())
-  name      String     @unique
+  name      String
   type      DeviceType
   vendor    String?
   model     String?
@@ -66,7 +66,7 @@ model Device {
   site      String?
   layer     Int        @default(3) // 1 核心 2 汇聚 3 接入
   /// 租户隔离的根：告警、指标都挂在设备上，设备归属哪个租户，
-  /// 由它派生的告警/事件就属于哪个租户。设备名仍保持全局唯一（见 STATE 已知偏差）。
+  /// 由它派生的告警/事件就属于哪个租户。设备名在租户内唯一。
   tenantId  String     @default("default")
   createdAt DateTime   @default(now())
 
@@ -78,6 +78,7 @@ model Device {
   aliases      DeviceAlias[]
   metrics      MetricSample[]
 
+  @@unique([tenantId, name])
   @@index([type, site])
   @@index([tenantId])
 }
@@ -90,14 +91,17 @@ model Device {
 /// 由调用方归一化（库里存归一化后的形式）。
 model DeviceAlias {
   id        String   @id @default(cuid())
-  alias     String   @unique
+  alias     String
   deviceId  String
+  /// 与设备租户一致。别名只在租户内唯一，两个租户可以各自映射同一个主机名。
+  tenantId  String   @default("default")
   /// 来源：ALERTMANAGER / ZABBIX / MANUAL，用于排查"这条映射是谁加的"
   source    String   @default("MANUAL")
   note      String?
   createdAt DateTime @default(now())
   device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, alias])
   @@index([deviceId])
 }
 
@@ -206,6 +210,9 @@ model AlertFingerprint {
 model Alert {
   id                  String      @id @default(cuid())
   fingerprintId       String
+  /// 租户快照：避免外部告警 ID 在不同租户之间互相去重，
+  /// 也让高频告警查询无需每次 join 设备。
+  tenantId            String      @default("default")
   severity            Severity
   value               Float?
   threshold           Float?
@@ -227,7 +234,8 @@ model Alert {
   suppressing  Alert[]          @relation("suppression")
 
   @@unique([fingerprintId, cycleStart])
-  @@unique([externalKey])
+  @@unique([tenantId, externalKey])
+  @@index([tenantId, status, lastSeen])
   @@index([status, lastSeen])
   @@index([incidentId])
   @@index([suppressedByAlertId])
@@ -247,7 +255,7 @@ model ChangeRecord {
 
 model Incident {
   id             String         @id @default(cuid())
-  code           String         @unique // INC-20261119-001
+  code           String // INC-20261119-001，租户内按天递增
   title          String
   status         IncidentStatus @default(OPEN)
   severity       Severity
@@ -293,6 +301,7 @@ model Incident {
   reports    Report[]
   cases      CaseRecord[]
 
+  @@unique([tenantId, code])
   @@index([status, startedAt])
   @@index([severity])
   @@index([tenantId, status, startedAt])

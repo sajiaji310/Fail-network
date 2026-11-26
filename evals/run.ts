@@ -91,6 +91,7 @@ async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.mode === 'mock') process.env.LLM_MOCK = 'true';
 
+  const { llmMode } = await import('@/lib/env');
   const { db } = await import('@/lib/db');
   const { resetDemoData } = await import('@/modules/ingest/reset');
   const { runScenarioSpec } = await import('@/modules/ingest/scenario');
@@ -101,11 +102,13 @@ async function main() {
   const cases = options.only.length === 0 ? all : all.filter((c) => options.only.includes(c.id));
   if (cases.length === 0) throw new Error('没有匹配的场景，检查 --set / --only');
 
+  // CLI 的 fallback 只是「不强制 mock」。有 Key 时实际是 live。
+  const reportedMode = options.mode === 'mock' ? 'mock' : llmMode();
   const startedAt = new Date();
   const scores = [];
 
   process.stdout.write(
-    `[eval] ${cases.length} 个场景 · set=${options.set} · mode=${options.mode}\n`,
+    `[eval] ${cases.length} 个场景 · set=${options.set} · mode=${reportedMode}\n`,
   );
 
   for (const kase of cases) {
@@ -285,7 +288,7 @@ async function main() {
   const report: EvalReport = {
     meta: {
       set: options.set === 'all' ? 'dev+test' : options.set,
-      mode: options.mode,
+      mode: reportedMode,
       startedAt: startedAt.toISOString(),
       durationMs: Date.now() - startedAt.getTime(),
     },
@@ -298,7 +301,9 @@ async function main() {
 
   if (options.write) {
     mkdirSync(RESULT_DIR, { recursive: true });
-    const slug = options.set === 'all' ? 'all' : options.set;
+    const slug =
+      // live 写到 *-live，README 对得上的规则引擎基线 test.md / dev.md 保持不动
+      (options.set === 'all' ? 'all' : options.set) + (reportedMode === 'live' ? '-live' : '');
     writeFileSync(path.join(RESULT_DIR, `${slug}.md`), markdown, 'utf8');
     writeFileSync(
       path.join(RESULT_DIR, `${slug}.json`),

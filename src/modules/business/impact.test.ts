@@ -55,7 +55,7 @@ describe('getAffectedServices', () => {
   it('只命中一台设备时也只报一台，不把服务依赖的全部设备算成受影响', async () => {
     await makeService('TEST-MULTI', 2, ['ACC-SW-01', 'ACC-SW-02', 'ACC-SW-03']);
     const device = await db.device.findUniqueOrThrow({
-      where: { name: 'ACC-SW-02' },
+      where: { tenantId_name: { tenantId: 'default', name: 'ACC-SW-02' } },
       select: { id: true },
     });
 

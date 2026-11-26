@@ -22,16 +22,17 @@ export function isClosedStatus(status: IncidentStatus): boolean {
 }
 
 /**
- * `INC-YYYYMMDD-NNN` 按天递增。
+ * `INC-YYYYMMDD-NNN` 按租户、按天递增。
  *
- * 取当天已有编码的最大序号 +1，而不是 count+1 —— 事件被删过之后 count 会回退，
+ * 取该租户当天已有编码的最大序号 +1，而不是 count+1 —— 事件被删过之后 count 会回退，
  * 导致编码重复撞唯一键。日期用东八区（UTC+8），与 seed 的编码规则保持一致。
+ * 不同租户同一天可以各有一条 `INC-YYYYMMDD-001`。
  */
-export async function nextIncidentCode(at: Date): Promise<string> {
+export async function nextIncidentCode(at: Date, tenantId = 'default'): Promise<string> {
   const day = new Date(at.getTime() + 8 * 3600_000).toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `INC-${day}-`;
   const rows = await db.incident.findMany({
-    where: { code: { startsWith: prefix } },
+    where: { tenantId, code: { startsWith: prefix } },
     select: { code: true },
   });
   let max = 0;

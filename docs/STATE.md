@@ -1,11 +1,11 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-21 01:05
+> 最后更新：2026-11-26 18:20
 
 ## 当前任务
 
-**第 4 阶段（真实数据接入和规模化）— T10–T16 已实现并有实测数据，v0.1.0 已打本地 tag，等待人工验收**
+**第 4 阶段验收已在本机跑完。** 生产服务在 3100，`/api/health` 为 `status=ok db=up llm=live`。`accept:phase4 --write` 对 3100 是 PASS 15 / FAIL 0，随后 `--clean`（告警 1 · 事件 0 · 批次 4 · 采样 4）。Playwright 2 条通过。`lint`、`tsc`、`next build`（产物在 `.next-serve`）、`npm test`（339）都通过。8 张截图已按当前页面重生成。研判降级测试在文件内临时清空 Key，避免 `.env` 有 Key 时打到模型并超时。
 
 阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
 
@@ -292,7 +292,7 @@
 
 `modules/ingest/sources/alertmanager.ts` 与 `zabbix.ts` 把上游 payload 归一成 `RawAlert`：
 告警标题经 `classifyAlertName` 映射到平台类型词表（否则抑制不敢做、打分拿不到类型分）；
-`resolved` 告警跳过并计入 `skipped`；Alertmanager 的零值 `endsAt`（`0001-01-01`）不当恢复时间；
+`resolved` 进入生命周期并关闭已有周期（外部键 `fingerprint + startsAt`）；Alertmanager 的零值 `endsAt`（`0001-01-01`）不当恢复时间，firing 的非零 `endsAt` 也不写入 `lastSeen`；
 纳秒时间裁到毫秒。
 
 设备匹配是最容易卡住的一步：新增 `DeviceAlias`，解析顺序 **别名 → 设备名 → 设备 IP**，大小写不敏感。
@@ -344,7 +344,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 
 - 默认只读：健康检查、页头阶段徽标、`/sources` 与 `/metrics` 与 `/settings`（交付进度 16/16）页面、
   批次列表、保留 dry-run、别名解析；
-- `--write`：Alertmanager（含 resolved 跳过与别名命中）+ Zabbix（含"设备不存在"提示）+ 指标采样
+- `--write`：Alertmanager（firing 入库，同周期 resolved 关闭，别名命中）+ Zabbix（含"设备不存在"提示）+ 指标采样
   （写入 2 条 → 重推幂等 0 条 → 趋势首末/峰谷/斜率 → 批次 DONE 100%）；
 - `--clean`：按 `acceptance` 标记清掉写入的告警/批次/采样，审计日志保留（追加型证据链，删了等于改历史）。
 
@@ -403,8 +403,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 - **案例检索是多词 AND**：搜"光模块 抖动"要求两个词都命中（含 tags 精确 `has`）。词太多容易 0 结果，
   空态文案已提示
 - **`/cases` 不做语义检索**（决策 8）：`CaseRecord.embedding` 字段预埋但为空，当前是 ILIKE + 标签
-- **指标只有快照**：库里没有指标表，CPU/内存/端口错包只能取告警自带的 `value/threshold`，
-  即"上报那一刻"的值，没有时间序列。prompt 里标注了这个限制，避免模型当趋势用。P1 接采集后再补
+- **指标是采样快照，不是时序库**（T12 已有 `MetricSample`）：事件窗口内给出首末值、峰谷和斜率，作为 `METRIC` 证据。没有采样时，prompt 仍只拿告警自带的 `value/threshold`，并写明不要当成趋势。降采样、长期存储、多标签查询不做，这些应接 Prometheus
 - **L1 用的是"上下文清单"而不是全库 ID**：ref 必须命中本次 prompt 里出现过的 id。
   比文档（"库内真实 id"）更严：被预算裁掉的案例/变更即使真实存在也会被判 `EVIDENCE_NOT_FOUND`。
   这是有意的 —— 模型看不到的证据，它引用了就是幻觉
@@ -431,44 +430,40 @@ L2 仍要求设备在影响面 ≤2 跳内。
 - **评测集分布与框架 10.5 不一致**：框架设想正例/干扰例/对抗例各 8，实际 dev 6/5/5、test 2/2/4。
   对抗例偏多是刻意的（MVP 阶段错判代价高于漏判），但正例只有 2 个的 test 集统计意义有限，
   分母小于 10 时一个场景就能挪动 14 个百分点
-- **评测全部跑在 `LLM_MOCK=false` + 无 key 的降级路径上**：所有分数反映的是规则引擎下限，
-  真实 LLM 推理质量没有纳入评测。要做「LLM vs 规则」对比，得先有稳定的 key 预算与
-  可重复的采样策略
-- **告警压缩比未达标（6.0:1 / 目标 8:1）**：对抗例告警量本就小（3–8 条）拉低整体比值，
-  仅正例 7.5:1 仍差一点。根子是跨时间窗的重复告警没有二次收敛 —— B4/B6 之外的"长期悬挂告警"
-  还没有归属规则，属 T05 已知欠账
+- **留出集已用真实模型跑过**（2026-11-26，DeepSeek `deepseek-chat`）：结果在 `evals/results/test-live.md`。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、49017 token、fallback 0、平均 8969 ms。9 次调用都是 `source=LLM`，日志里没有 schema 修复，也没有超时降级。失败是 test-01（上游归因）、test-07（该空结论却给了假设）、test-08（拓扑全缺）。规则引擎基线 `evals/results/test.md` 没动，README 仍对那张表（Top1/Top3 85.7%，只败 test-08）
+- **Docker 镜像已构建**：`netscope-app:latest`。还没 `compose up`，因为本机 5432 被便携版 Postgres 占着
+- **留出集压缩比 6.0:1，等于数据集上限**：54 条告警 / 9 个标注事件，压缩效率 100%。
+  二次收敛已经落地（同指纹、原事件仍活跃、上限 6 小时）。绝对比值要高于 6:1，只能换平均每事件不少于 8 条告警的数据，不是再改聚类
 - **Docker 未做实际构建验证**：本机没有 docker，Dockerfile / compose 只做了逐行校对
   （`DATABASE_URL` 覆盖、entrypoint 序列、非 root、healthcheck）。本地等价路径已验到
   `npm run build` + `npm run start` 起来且 `/api/health` 200
-- **历史归档事件在列表里显示「告警 0 · 设备 0」**：30 条种子历史事件没有关联 `Alert` 行
-  （种子只造了案例文案，没造配套告警）。活跃事件计数正常，属数据侧欠账，不是聚合算错
+- **历史归档事件已挂上配套告警**（2026-11-26）：每条种子案例 3 条 `RESOLVED` 告警，外部键 `seed:{code}:{0|1|2}`，设备名从案例正文抽出。列表不再是「告警 0 · 设备 0」。状态是已恢复，不会被当前窗口的聚合扫进去
 - **新增 7 张表**（文档 8 节模型没有）：`HypothesisVerify`（验证勾选）、`Service` / `ServiceDevice`（业务服务依赖）、
   `DeviceAlias`（真实源主机名映射）、`MetricSample`（指标快照）、`IngestBatch`（导入批次）、`Tenant`（租户）；
   `Incident` 同时新增 `assignee / team / claimedAt / slaMinutes / tenantId` 五个字段。理由同前几阶段的
   `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这些列承载，回写文档待办
 - **接手没有身份校验**：`assignee` 仍是自由填写的名字。RBAC 管住了"谁能写"，但"只能接自己的单"
   需要用户表与登录态，MVP-0 没有；当前身份只有 API Key 的 `actor`
-- **多租户是"Key 绑定租户 + 查询过滤"，不是行级安全**：`Device.name` 仍全局唯一、
-  告警指纹签名不含租户，两个租户不能有同名设备。控制台是单租户（default）视图。
-  真做多租户要把唯一键改成 `(tenantId, name)`、指纹/聚簇 key 加租户盐，并给所有关联查询补 scope
+- **多租户查询已按 Key 的 tenantId 收口**（2026-11-21）：事件接手/流转/拆分/假设/验证、案例检索与确认、报告、RCA、聚合、告警列表、拓扑、保留策略、模拟 reset、运行指标都带租户条件。`Alert` 增加 `tenantId`，外部键唯一约束改为 `(tenantId, externalKey)`，同一外部 ID 可以在不同租户各记一条。本机用 `prisma/manual/20261121_alert_tenant.sql` 加上去（仓库没有 migration 历史，`db push` 会把换唯一索引误报成数据丢失，所以用这条只加列、只换索引的 SQL）。新列默认 `default`，已有行回填后仍落在 default 租户。种子历史告警的外部键以 `seed:` 开头，也落在 default 租户。
+- **设备名、别名、事件编号已改成租户内唯一**（2026-11-26）：`prisma/manual/20261126_tenant_uniques.sql`。两个租户可以各有一台 `CORE-SW-01`、同一条别名、同一天的 `INC-YYYYMMDD-001`。编号按租户取当天最大序号。`Incident.clusterKey` 与指纹签名仍全局唯一，键里含设备 id，同名设备不会撞。`Service.code` 仍全局唯一。控制台页面仍是 default 租户视图。
+- **Alertmanager**：一次周期的外部键是 `am:${fingerprint}:${startsAt}`。`resolved` 进入导入并调用 `resolveParentAlert`，纯恢复包不再返回 400。firing 的 `lastSeen` 用接收时间，`endsAt` 只留在 raw。重复 firing 刷新 `lastSeen`，不重复计数。异步批次表没有单独的 `resolved` 列，这个数只出现在同步响应里。
+- **限流**：合法 API Key 按钥匙分桶。只有 `TRUST_PROXY_HEADERS=true` 才读 `x-forwarded-for`。审计 IP 使用同一规则。
+- **批次仍在本进程**：重启后 `sweep` 把超时批次标 FAILED，不自动重跑。要多副本得换外部队列，这次没有加依赖。
 - **响应时限只管"有没有人接手"，不管"多久修好"**：MTTR 目标（解决时限）需要按故障类型分档，
   当前数据里没有"预计恢复时间"这类字段，硬编一个目标只会变成没人看的口号
 - **业务服务依赖是种子手工维护的**：`Service` / `ServiceDevice` 没有管理界面，也没接 CMDB；
   影响面只回答"波及哪几个已登记业务"，未登记的设备命中服务时页面会明说"未命中"
 - **研判进度表是进程内单例**（`globalThis`）：单实例没问题；多实例部署时轮询可能打到别的进程，
   前端会退化成"等着，看不到阶段"。升级 SSE 时顺手换 Redis，接口形状不变
-- **指标是采样快照，不是时序库**：`MetricSample` 只保留事件窗口够用的点，降采样、长期存储、
-  多标签查询都没有；真要这些应该接 Prometheus 而不是在业务库里长一套 TSDB
 - **批次执行在进程内**：状态落库但推进靠本进程，重启会让批次中断（`sweep` 会标 FAILED）。
   多副本部署必须换外部队列，否则同一批次可能被两个进程同时推进
 - **误抑制率是近似口径**：「父告警先恢复、自身仍在抑制」是可测的信号，但"压错"还有别的形态
   （压对了对象但压太久、压制链多级传递），当前指标只覆盖最容易观测的一类
-- **页面不做鉴权，只有 `/api/v1/*` 走 RBAC**：控制台默认仍由反向代理/内网保护；
-  multi-tenant 部署时控制台是 default 租户视图，不是按 Key 切换的
-- **历史告警不能"回放"**：聚合只吃近 30 分钟仍活跃的告警，回填 24 小时历史后事件数几乎不变（实测 48 条候选 / 2 个簇）。
-  想用历史数据评测「聚合 + 研判」，需要给导入加一个"时间轴平移"参数（把 `firstSeen/lastSeen` 整体挪到当前窗口），
-  当前没有 —— 这也是为什么压测只能验证入库通路，验证不了研判质量
-- **压测数字换机器就变**：12 000 条 / 36.2s / 331 行每秒 是本机单实例、顺序灌的实测值，
+- **读接口不鉴权**：页面在 production 另要口令（见下一条）。`/api/v1` 的普通 GET 仍不要求 API Key。控制台登录后仍是 default 租户视图，不是按 Key 切换的
+- **页面在 production 要口令**：`CONSOLE_PASSWORD` 换成 12 小时 cookie。没配口令时控制台页面返回 500。`local` / `staging` 不拦，E2E 和评测不用登录
+- **历史告警可以按自己的时间回放**：`replayCorrelation({ from, to })` 每次最多前进 2 小时，把该时刻当作 `now` 调 `runCorrelation`。不改 `firstSeen` / `lastSeen`。一次最长 7 天。入口是 `POST /api/v1/correlation/run` 的 `{ from, to }`，或 `npm run corr:run -- --from=... --to=...`
+- **入库按指纹分组写**：同一批先在内存里定 30 分钟周期，再分组插入。抑制仍按输入顺序。唯一键冲突整批退回逐行。分块大小仍然只影响进度刷新，不决定行速
+- **压测数字换机器就变**：12 000 条 / 36.2s / 331 行每秒 是分组写入之前、本机单实例顺序灌的实测值，
   它的意义是"万级回填是分钟级、不是小时级"，不是可复现的基准。数据构成也影响结果：
   去重率就是构造的重报率（20%），抑制率取决于父告警占比（本次 76%）
 
@@ -486,12 +481,11 @@ L2 仍要求设备在影响面 ≤2 跳内。
    再人工看 `/sources` 的别名表与 `/metrics` 的四个数字是否符合预期；验完 `--clean` 清场
 2. ~~用真实环境的一批告警回填~~ → 已完成（T16，1.2 万条 / 36.2s / 331 行每秒，见上）。
    真实环境回填时重点看两项：**「设备不存在」占比**（决定别名表还要补多少）与
-   **聚合后的事件数**（历史告警不会成簇，只有近 30 分钟活跃的才成）
+   **聚合后的事件数**（历史告警不会成簇；候选只包括仍为 ACTIVE、且 `lastSeen` 在最近 2 小时内的告警）
 3. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag，指向 `ed2a8dd`）+ `docs/RELEASE-v0.1.0.md`。
    GitHub Topics / Release 还差一步 —— **仓库没有配置 remote**，需要先 `git remote add origin <url>` 再 push
    `main` 与 `v0.1.0`
-4. 若要让历史数据参与评测：给导入加「时间轴平移」参数（把 `firstSeen/lastSeen` 整体挪到当前窗口），
-   否则回填只能验通路、验不了研判质量
+4. 历史回放已经有了：`npm run corr:run -- --from=<最早 lastSeen> --to=<最晚 lastSeen>`。不要把时间戳平移到当前窗口
 
 ## T09 人工验收清单
 
@@ -524,7 +518,7 @@ curl -s localhost:3100/overview | grep -o '第 4 阶段[^<]*' | head -1
 npm run accept:phase4 -- --base=http://127.0.0.1:3100 --write
 #   期望：结论 PASS 15 / FAIL 0 / SKIP 0
 #   覆盖：health / 页头阶段徽标 / sources+metrics+settings 页面 / 批次列表 / 保留 dry-run /
-#         Alertmanager（resolved 跳过 + 别名命中）/ Zabbix（设备不存在提示）/
+#         Alertmanager（同周期 resolved 关闭 + 别名命中）/ Zabbix（设备不存在提示）/
 #         指标写入 2 条 + 重推幂等 0 条 + 趋势首末峰谷斜率 / 批次 DONE 100% / 别名解析
 npm run accept:phase4 -- --base=http://127.0.0.1:3100 --clean
 #   期望：告警 1 · 事件 0 · 批次 2 · 采样 2；审计日志保留
@@ -537,9 +531,9 @@ ls docs/screenshots   # overview / incidents / incident-detail / topology / case
 # 7) 门禁（316 passed）
 npm run lint && npm run typecheck && npm run test && npm run build
 
-# 8) Docker 一键起（本机没装 docker，需在装了 docker 的机器上验）
-docker compose up --build -d
-curl -s localhost:3000/api/health | jq '{status,db,llm}'
+# 8) Docker 镜像已构建（netscope-app:latest）。compose up 会占 5432，和便携版 Postgres 冲突。
+#    要起容器：先 npm run db:stop，再 docker compose up -d，看 http://127.0.0.1:3000/api/health
+#    这是一套新的空库，不包含便携版里的数据。今晚演示用本机库，不要 up。
 ```
 
 浏览器验收（重点）：

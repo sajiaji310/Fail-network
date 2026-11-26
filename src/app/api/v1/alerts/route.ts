@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { listAlerts } from '@/modules/alerts/service';
 
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const result = await listAlerts(parsed.data);
+    const result = await listAlerts({ ...parsed.data, tenantId: tenantOf(req) });
     return NextResponse.json(result, { headers: { 'x-trace-id': traceId } });
   } catch (error) {
     const { status, body } = toErrorBody(error);

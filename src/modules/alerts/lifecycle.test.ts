@@ -49,7 +49,7 @@ async function alertsOfType(type: string) {
 describe.skipIf(!hasDb)('T04 生命周期与抑制（依赖真实 DB）', () => {
   beforeAll(async () => {
     const device = await db.device.upsert({
-      where: { name: DEVICE },
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
       create: { name: DEVICE, type: 'SWITCH', layer: 3, site: '测试' },
       update: {},
     });
@@ -59,7 +59,9 @@ describe.skipIf(!hasDb)('T04 生命周期与抑制（依赖真实 DB）', () => 
 
   afterAll(async () => {
     await wipe();
-    await db.device.delete({ where: { name: DEVICE } }).catch(() => undefined);
+    await db.device
+      .delete({ where: { tenantId_name: { tenantId: 'default', name: DEVICE } } })
+      .catch(() => undefined);
   });
 
   async function wipe() {

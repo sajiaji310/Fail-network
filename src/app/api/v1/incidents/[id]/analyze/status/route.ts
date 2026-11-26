@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { tenantOf } from '@/lib/auth';
 import { toErrorBody } from '@/lib/errors';
 import { getAnalysisProgress } from '@/modules/rca/progress';
 
@@ -18,16 +19,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const traceId = crypto.randomUUID();
   try {
     const { id } = await ctx.params;
-
-    // 前端用事件 id 轮询；脚本/CLI 可能用编码，落不到就解析一次
-    let progress = getAnalysisProgress(id);
-    if (!progress) {
-      const row = await db.incident.findFirst({
-        where: { code: id },
-        select: { id: true },
-      });
-      if (row) progress = getAnalysisProgress(row.id);
-    }
+    const owned = await db.incident.findFirst({
+      where: { tenantId: tenantOf(_req), OR: [{ id }, { code: id }] },
+      select: { id: true },
+    });
+    const progress = owned ? getAnalysisProgress(owned.id) : null;
 
     return NextResponse.json(
       {

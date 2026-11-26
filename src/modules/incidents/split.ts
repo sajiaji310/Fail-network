@@ -39,6 +39,7 @@ export type SplitInput = {
   alertIds: readonly string[];
   note?: string | null;
   now?: Date;
+  tenantId?: string;
 };
 
 export async function splitIncident(input: SplitInput): Promise<SplitResult | null> {
@@ -49,13 +50,17 @@ export async function splitIncident(input: SplitInput): Promise<SplitResult | nu
   }
 
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.idOrCode }, { code: input.idOrCode }] },
+    where: {
+      tenantId: input.tenantId ?? 'default',
+      OR: [{ id: input.idOrCode }, { code: input.idOrCode }],
+    },
     select: {
       id: true,
       code: true,
       status: true,
       severity: true,
       statusLog: true,
+      tenantId: true,
       alerts: {
         select: {
           id: true,
@@ -109,7 +114,7 @@ export async function splitIncident(input: SplitInput): Promise<SplitResult | nu
 
   // 带 split: 盐：即便指纹集合与原事件不同，也避免与自动聚合生成的 key 撞车
   const clusterKey = clusterKeyOf([...moved.map((a) => a.fingerprintId), `split:${incident.id}`]);
-  const code = await nextIncidentCode(firstSeen);
+  const code = await nextIncidentCode(firstSeen, incident.tenantId);
   const note = input.note?.trim() ? input.note.trim() : null;
 
   const target = await db.$transaction(async (tx) => {
@@ -123,6 +128,7 @@ export async function splitIncident(input: SplitInput): Promise<SplitResult | nu
         lastSeen,
         clusterKey,
         splitFromId: incident.id,
+        tenantId: incident.tenantId,
         // 与自动聚合创建的事件保持同一口径：响应目标在创建时快照
         slaMinutes: slaMinutesOf({ severity, slaMinutes: null }),
       },

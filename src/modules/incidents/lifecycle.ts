@@ -26,6 +26,7 @@ export type TransitionInput = {
   to: IncidentStatus;
   note?: string | null;
   now?: Date;
+  tenantId?: string;
 };
 
 export type TransitionResult = {
@@ -49,9 +50,10 @@ const logger = createLogger('incidents/lifecycle');
 export async function transitionIncident(input: TransitionInput): Promise<TransitionResult | null> {
   const now = input.now ?? new Date();
   const note = input.note?.trim() ? input.note.trim() : null;
+  const tenantId = input.tenantId ?? 'default';
 
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.idOrCode }, { code: input.idOrCode }] },
+    where: { tenantId, OR: [{ id: input.idOrCode }, { code: input.idOrCode }] },
     select: {
       id: true,
       code: true,
@@ -144,7 +146,7 @@ export async function transitionIncident(input: TransitionInput): Promise<Transi
   };
 
   if (input.to === 'RESOLVED') {
-    const detail = await getIncidentDetail(incident.id);
+    const detail = await getIncidentDetail(incident.id, tenantId);
     if (!detail) {
       result.warnings.push('事件读取失败，未生成案例与报告');
       return result;
@@ -167,7 +169,7 @@ export async function transitionIncident(input: TransitionInput): Promise<Transi
     }
 
     try {
-      const report = await generateReport(detail.id, { now });
+      const report = await generateReport(detail.id, { now, tenantId });
       result.reportId = report?.reportId ?? null;
     } catch (error) {
       logger.warn('结案生成报告失败', { err: String(error), incident: incident.code });
@@ -208,10 +210,14 @@ export async function setHypothesisVerdict(input: {
   verdict: Verdict;
   note?: string | null;
   now?: Date;
+  tenantId?: string;
 }): Promise<VerdictResult | null> {
   const now = input.now ?? new Date();
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.incidentIdOrCode }, { code: input.incidentIdOrCode }] },
+    where: {
+      tenantId: input.tenantId ?? 'default',
+      OR: [{ id: input.incidentIdOrCode }, { code: input.incidentIdOrCode }],
+    },
     select: { id: true },
   });
   if (!incident) return null;
@@ -253,9 +259,9 @@ export async function setHypothesisVerdict(input: {
 }
 
 /** 结案记录读取（API/报告复用；页面走 getIncidentDetail 已带） */
-export async function getClosure(idOrCode: string) {
+export async function getClosure(idOrCode: string, tenantId = 'default') {
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: idOrCode }, { code: idOrCode }] },
+    where: { tenantId, OR: [{ id: idOrCode }, { code: idOrCode }] },
     select: { closure: true },
   });
   return incident ? parseClosure(incident.closure) : null;

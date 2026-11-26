@@ -10,6 +10,9 @@ export const SeveritySchema = z.enum(['P0', 'P1', 'P2', 'P3']);
 export const RawAlertSchema = z.object({
   /** 上游告警 ID；有则按它幂等（同一 ID 重复导入只算一条） */
   externalKey: z.string().min(1).max(200).optional(),
+  state: z.enum(['FIRING', 'RESOLVED']).optional(),
+  /** 重复 firing 也代表仍在发生，需要刷新 lastSeen，但不重复计数。 */
+  refreshOnDuplicate: z.boolean().optional(),
   deviceName: z.string().min(1).max(120),
   type: z.string().min(1).max(64),
   severity: SeveritySchema,

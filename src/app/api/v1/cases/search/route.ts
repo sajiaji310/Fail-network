@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { searchCases } from '@/modules/case/service';
 
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const items = await searchCases(parsed.data);
+    const items = await searchCases({ ...parsed.data, tenantId: tenantOf(req) });
     return NextResponse.json(
       { items, total: items.length },
       { headers: { 'x-trace-id': traceId } },

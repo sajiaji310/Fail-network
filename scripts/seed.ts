@@ -1,10 +1,12 @@
 /**
- * 种子数据：30 设备（1 核心 / 4 汇聚 / 25 接入）+ 60 链路 + 30 条已结案历史案例
- * 幂等：全部 upsert，重复执行条数不变
- * 确定性：时间基于固定基准日，不用 new Date()
+ * 种子数据：30 设备（1 核心 / 4 汇聚 / 25 接入）+ 60 链路 + 30 条已结案历史案例。
+ * 每条历史案例挂 3 条已恢复告警，列表不再是「告警 0 · 设备 0」。
+ * 幂等：全部 upsert，重复执行条数不变。
+ * 确定性：时间基于固定基准日，不用 new Date()。
  */
 import { loadEnvFile } from 'node:process';
 import { PrismaClient } from '@prisma/client';
+import { signatureOf } from '../src/modules/alerts/fingerprint';
 import { SLA_TARGET_MINUTES } from '../src/modules/incidents/sla';
 import {
   ACC_NAMES,
@@ -24,6 +26,7 @@ try {
 }
 
 const db = new PrismaClient();
+const TENANT = 'default';
 
 const BASE = Date.UTC(2026, 10, 1, 1, 0, 0); // 2026-11-01T09:00+08:00
 const DAY = 86_400_000;
@@ -66,7 +69,7 @@ function codeFor(startedAt: number, seqByDay: Map<string, number>): string {
 async function seedDevices() {
   for (const d of DEVICES) {
     await db.device.upsert({
-      where: { name: d.name },
+      where: { tenantId_name: { tenantId: TENANT, name: d.name } },
       create: d,
       update: {
         type: d.type,
@@ -131,14 +134,23 @@ async function seedTenant() {
 
 async function seedAliases() {
   for (const a of ALIASES) {
-    const device = await db.device.findUnique({ where: { name: a.device }, select: { id: true } });
+    const device = await db.device.findUnique({
+      where: { tenantId_name: { tenantId: TENANT, name: a.device } },
+      select: { id: true },
+    });
     if (!device) {
       console.warn(`[seed] 别名跳过（设备不存在）：${a.alias} → ${a.device}`);
       continue;
     }
     await db.deviceAlias.upsert({
-      where: { alias: a.alias },
-      create: { alias: a.alias, deviceId: device.id, source: a.source, note: a.note },
+      where: { tenantId_alias: { tenantId: TENANT, alias: a.alias } },
+      create: {
+        alias: a.alias,
+        deviceId: device.id,
+        tenantId: TENANT,
+        source: a.source,
+        note: a.note,
+      },
       update: { deviceId: device.id, source: a.source, note: a.note },
     });
   }
@@ -158,7 +170,7 @@ async function seedMetrics() {
 
   for (const series of METRIC_SERIES) {
     const device = await db.device.findUnique({
-      where: { name: series.device },
+      where: { tenantId_name: { tenantId: TENANT, name: series.device } },
       select: { id: true },
     });
     if (!device) continue;
@@ -182,7 +194,89 @@ async function seedMetrics() {
   }
 }
 
+type CaseCategory = (typeof CASES)[number]['category'];
+
+/** 每条历史案例 3 条已恢复告警，类型跟着根因类别走，避免列表全是同一种 */
+const CASE_ALERT_TYPES: Record<CaseCategory, [string, string, string]> = {
+  HARDWARE: ['DEVICE_UNREACHABLE', 'LINK_DOWN', 'PORT_FLAP'],
+  CONFIG: ['CONFIG_CHANGE', 'LINK_DOWN', 'PACKET_LOSS'],
+  LINK: ['LINK_DOWN', 'PACKET_LOSS', 'PORT_FLAP'],
+  CAPACITY: ['CPU_HIGH', 'HIGH_LATENCY', 'PACKET_LOSS'],
+  UPSTREAM: ['DEVICE_UNREACHABLE', 'HIGH_LATENCY', 'PACKET_LOSS'],
+  OTHER: ['LINK_DOWN', 'PACKET_LOSS', 'CPU_HIGH'],
+};
+
+/** 从案例正文里抽出设备名；`AGG-SW-03/04` 记成两台。没有点名就按序号落到接入交换机 */
+function devicesForCase(text: string, index: number, known: Map<string, string>): string[] {
+  const named = new Set<string>();
+  for (const match of text.matchAll(/(CORE|AGG|ACC)-SW-(\d{2})(?:\/(\d{2}))?/g)) {
+    named.add(`${match[1]}-SW-${match[2]}`);
+    if (match[3]) named.add(`${match[1]}-SW-${match[3]}`);
+  }
+  const existing = [...named].filter((name) => known.has(name));
+  if (existing.length > 0) return existing.slice(0, 3);
+  return [ACC_NAMES[index % ACC_NAMES.length]!];
+}
+
+async function attachSeedAlerts(
+  incidentId: string,
+  code: string,
+  spec: (typeof CASES)[number],
+  index: number,
+  startedAtMs: number,
+  resolvedAt: Date,
+  idByName: Map<string, string>,
+) {
+  const names = devicesForCase(`${spec.symptom}\n${spec.rootCause}`, index, idByName);
+  const types = CASE_ALERT_TYPES[spec.category];
+  for (let i = 0; i < types.length; i++) {
+    const deviceName = names[Math.min(i, names.length - 1)]!;
+    const deviceId = idByName.get(deviceName);
+    if (!deviceId) throw new Error(`种子告警设备不存在：${deviceName}`);
+    const type = types[i]!;
+    const firstSeen = new Date(startedAtMs + i * 60_000);
+    const signature = signatureOf(deviceId, type, 'seed');
+    const fingerprint = await db.alertFingerprint.upsert({
+      where: { signature },
+      create: { signature, deviceId, type, metric: 'seed', severity: spec.severity },
+      update: { severity: spec.severity },
+    });
+    const externalKey = `seed:${code}:${i}`;
+    await db.alert.upsert({
+      where: { tenantId_externalKey: { tenantId: TENANT, externalKey } },
+      create: {
+        fingerprintId: fingerprint.id,
+        tenantId: TENANT,
+        severity: spec.severity,
+        message: `${deviceName} ${type}：${spec.title}`,
+        status: 'RESOLVED',
+        count: 1,
+        firstSeen,
+        lastSeen: resolvedAt,
+        cycleStart: firstSeen,
+        externalKey,
+        incidentId,
+      },
+      update: {
+        fingerprintId: fingerprint.id,
+        severity: spec.severity,
+        message: `${deviceName} ${type}：${spec.title}`,
+        status: 'RESOLVED',
+        firstSeen,
+        lastSeen: resolvedAt,
+        cycleStart: firstSeen,
+        incidentId,
+      },
+    });
+  }
+}
+
 async function seedCases() {
+  const devices = await db.device.findMany({
+    where: { tenantId: TENANT },
+    select: { id: true, name: true },
+  });
+  const idByName = new Map(devices.map((d) => [d.name, d.id]));
   const seqByDay = new Map<string, number>();
 
   for (const [index, c] of CASES.entries()) {
@@ -196,9 +290,10 @@ async function seedCases() {
     const claimedAt = new Date(startedAtMs + (2 + (index % 9)) * 60_000);
 
     const incident = await db.incident.upsert({
-      where: { code },
+      where: { tenantId_code: { tenantId: TENANT, code } },
       create: {
         code,
+        tenantId: TENANT,
         title: c.title,
         status: 'CLOSED',
         severity: c.severity,
@@ -260,6 +355,8 @@ async function seedCases() {
         verifyNote: '演示基线数据（人工整理）',
       },
     });
+
+    await attachSeedAlerts(incident.id, code, c, index, startedAtMs, resolvedAt, idByName);
   }
 }
 
@@ -273,8 +370,8 @@ async function main() {
   await seedMetrics();
   await seedCases();
 
-  const [devices, links, incidents, cases, services, aliases, samples, byLayer] = await Promise.all(
-    [
+  const [devices, links, incidents, cases, services, aliases, samples, seedAlerts, byLayer] =
+    await Promise.all([
       db.device.count(),
       db.topologyLink.count(),
       db.incident.count(),
@@ -282,24 +379,25 @@ async function main() {
       db.service.count(),
       db.deviceAlias.count(),
       db.metricSample.count(),
+      db.alert.count({ where: { externalKey: { startsWith: 'seed:' } } }),
       db.device.groupBy({ by: ['layer'], _count: { _all: true }, orderBy: { layer: 'asc' } }),
-    ],
-  );
+    ]);
 
   console.log(
-    `[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases} · 服务 ${services} · 别名 ${aliases} · 指标采样 ${samples}`,
+    `[seed] 设备 ${devices} · 链路 ${links} · 事件 ${incidents} · 案例 ${cases} · 服务 ${services} · 别名 ${aliases} · 指标采样 ${samples} · 历史告警 ${seedAlerts}`,
   );
   console.log(
     `[seed] 层级分布 ${byLayer.map((g) => `L${g.layer}:${g._count._all}`).join(' / ')}（期望 L1:1 / L2:4 / L3:25）`,
   );
-  console.log('[seed] 期望基线 30 / 60 / 30 / 30 / 6 / 4');
+  console.log('[seed] 期望基线 30 / 60 / 30 / 30 / 6 / 4，历史告警 90');
 
   const ok =
     devices === 30 &&
     links === 60 &&
     cases === 30 &&
     services === SERVICES.length &&
-    aliases === ALIASES.length;
+    aliases === ALIASES.length &&
+    seedAlerts === CASES.length * 3;
   if (!ok) {
     console.error('[seed] 数量与基线不一致，检查 upsert 唯一键');
     process.exitCode = 1;

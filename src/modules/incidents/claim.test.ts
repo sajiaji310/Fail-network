@@ -156,4 +156,16 @@ describe('releaseIncident', () => {
     const result = await releaseIncident({ idOrCode: id });
     expect(result!.releasedAssignee).toBeNull();
   });
+
+  it('别的租户按同一事件 ID 接手，当作不存在', async () => {
+    const id = await makeIncident();
+    const result = await claimIncident({
+      idOrCode: id,
+      assignee: '外租户',
+      tenantId: 'other-tenant',
+    });
+    expect(result).toBeNull();
+    const row = await db.incident.findUniqueOrThrow({ where: { id }, select: { assignee: true } });
+    expect(row.assignee).toBeNull();
+  });
 });

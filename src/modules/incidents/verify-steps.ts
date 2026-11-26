@@ -22,6 +22,7 @@ export type SetVerifyStepInput = {
   note?: string | null;
   by?: string | null;
   now?: Date;
+  tenantId?: string;
 };
 
 export type VerifyProgress = VerifyView & {
@@ -33,7 +34,10 @@ export type { VerifyStepView };
 export async function setVerifyStep(input: SetVerifyStepInput): Promise<VerifyProgress | null> {
   const now = input.now ?? new Date();
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: input.incidentIdOrCode }, { code: input.incidentIdOrCode }] },
+    where: {
+      tenantId: input.tenantId ?? 'default',
+      OR: [{ id: input.incidentIdOrCode }, { code: input.incidentIdOrCode }],
+    },
     select: { id: true },
   });
   if (!incident) return null;

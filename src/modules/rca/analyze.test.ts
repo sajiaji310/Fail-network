@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
+import { env } from '@/lib/env';
 import { signatureOf } from '../alerts/fingerprint';
 import { ANALYSIS_CACHE_MS, runAnalysis } from './analyze';
 import { parseAnalysisMeta } from './schema';
@@ -9,8 +10,11 @@ import { parseAnalysisMeta } from './schema';
  *
  * 跑真实数据库，用**过去的基准时间**隔离：这次是 2026-11-11 03:00，
  * 与 T05 集成测试（11-10 02:00）错开，互不干扰。
- * .env 里 LLM_API_KEY 为空 → 必然走 RULE_FALLBACK，正好验收"无 key 全链路可用"。
+ * .env 里可以有 Key。这个文件测的是「没配 Key 也能跑完」，
+ * 所以进来先把进程内的 Key 清空，结束再放回去，避免打到真实模型并超时。
  */
+
+const savedLlmKey = env.LLM_API_KEY;
 
 const BASE = new Date('2026-11-11T03:00:00Z');
 const at = (minutes: number) => new Date(BASE.getTime() + minutes * 60_000);
@@ -25,7 +29,10 @@ async function alertFor(
   severity: 'P0' | 'P1' | 'P2',
   minutes: number,
 ) {
-  const device = await db.device.findUnique({ where: { name: deviceName }, select: { id: true } });
+  const device = await db.device.findUnique({
+    where: { tenantId_name: { tenantId: 'default', name: deviceName } },
+    select: { id: true },
+  });
   if (!device) throw new Error(`设备不存在：${deviceName}，先跑 npm run db:seed`);
   const signature = signatureOf(device.id, type, null);
   const fingerprint = await db.alertFingerprint.upsert({
@@ -50,7 +57,11 @@ async function alertFor(
 }
 
 beforeAll(async () => {
-  const agg = await db.device.findUnique({ where: { name: 'AGG-SW-02' }, select: { id: true } });
+  env.LLM_API_KEY = '';
+  const agg = await db.device.findUnique({
+    where: { tenantId_name: { tenantId: 'default', name: 'AGG-SW-02' } },
+    select: { id: true },
+  });
   if (!agg) throw new Error('种子数据缺失，先跑 npm run db:seed');
 
   const incident = await db.incident.create({
@@ -85,6 +96,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  env.LLM_API_KEY = savedLlmKey;
   await db.alert.deleteMany({ where: { incidentId } });
   await db.incident.deleteMany({ where: { id: incidentId } });
   await db.changeRecord.deleteMany({ where: { id: changeId } });

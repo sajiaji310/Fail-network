@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { signatureOf } from '../alerts/fingerprint';
 import { buildDeviceGraph } from './topology';
 import { runCorrelation } from './service';
+import { replayCorrelation } from './replay';
 
 /**
  * 集成测试：跑真实数据库。
@@ -19,7 +20,10 @@ const deviceCache = new Map<string, { id: string; name: string }>();
 async function device(name: string) {
   const cached = deviceCache.get(name);
   if (cached) return cached;
-  const row = await db.device.findUnique({ where: { name }, select: { id: true, name: true } });
+  const row = await db.device.findUnique({
+    where: { tenantId_name: { tenantId: 'default', name } },
+    select: { id: true, name: true },
+  });
   if (!row) throw new Error(`设备不存在：${name}`);
   deviceCache.set(name, row);
   return row;
@@ -395,8 +399,12 @@ describe('B3 事件级合并', () => {
     const result = await runCorrelation(min(10));
     expect(result.merged).toHaveLength(1);
 
-    const keeper = await db.incident.findUnique({ where: { code: codeA } });
-    const dropped = await db.incident.findUnique({ where: { code: codeB } });
+    const keeper = await db.incident.findUnique({
+      where: { tenantId_code: { tenantId: 'default', code: codeA } },
+    });
+    const dropped = await db.incident.findUnique({
+      where: { tenantId_code: { tenantId: 'default', code: codeB } },
+    });
     expect(keeper?.status).toBe('OPEN');
     expect(dropped?.status).toBe('CLOSED');
     expect(dropped?.closedReason).toBe('AUTO_MERGED');
@@ -507,5 +515,49 @@ describe('AC-11 聚合性能', () => {
     expect(created.count).toBe(500);
     expect(result.consideredAlerts).toBe(500);
     expect(elapsed).toBeLessThan(2000);
+  });
+});
+
+describe('历史回放', () => {
+  it('单次聚合看不到 2 小时窗外的告警，按时间窗回放能各自成事件', async () => {
+    const early = await makeClusterAlerts(
+      'ACC-SW-01',
+      BASE,
+      ['LINK_DOWN', 'PACKET_LOSS', 'CPU_HIGH'],
+      'replay-early',
+    );
+    const lateBase = new Date(BASE.getTime() + 3 * 60 * 60 * 1000);
+    await makeClusterAlerts(
+      'ACC-SW-01',
+      lateBase,
+      ['HIGH_LATENCY', 'BGP_DOWN', 'TEMPERATURE_HIGH'],
+      'replay-late',
+    );
+    const end = new Date(lateBase.getTime() + 60_000);
+
+    const once = await runCorrelation(end);
+    expect(once.created).toHaveLength(1);
+    expect(await incidentOf(early)).toEqual([]);
+
+    await resetTestData();
+    const earlyAgain = await makeClusterAlerts(
+      'ACC-SW-01',
+      BASE,
+      ['LINK_DOWN', 'PACKET_LOSS', 'CPU_HIGH'],
+      'replay-early',
+    );
+    const lateAgain = await makeClusterAlerts(
+      'ACC-SW-01',
+      lateBase,
+      ['HIGH_LATENCY', 'BGP_DOWN', 'TEMPERATURE_HIGH'],
+      'replay-late',
+    );
+    const replayed = await replayCorrelation({ from: BASE, to: end });
+    expect(replayed.created.length).toBeGreaterThanOrEqual(2);
+    const earlyIncidents = await incidentOf(earlyAgain);
+    const lateIncidents = await incidentOf(lateAgain);
+    expect(earlyIncidents).toHaveLength(1);
+    expect(lateIncidents).toHaveLength(1);
+    expect(earlyIncidents[0]).not.toBe(lateIncidents[0]);
   });
 });

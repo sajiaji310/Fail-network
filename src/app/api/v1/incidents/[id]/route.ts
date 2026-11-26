@@ -64,6 +64,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
           idOrCode: id,
           to: parsed.data.status,
           note: parsed.data.note ?? null,
+          tenantId: tenantOf(req),
         });
         if (!transitioned) {
           throw new AppError('NOT_FOUND', `事件不存在：${id}`);

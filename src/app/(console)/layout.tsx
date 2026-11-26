@@ -1,5 +1,6 @@
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
+import { env } from '@/lib/env';
 import { getSystemStatus } from '@/modules/system/service';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,12 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
     <div className="flex min-h-screen">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar db={status.db} llm={status.llm} stage={status.stage} />
+        <Topbar
+          db={status.db}
+          llm={status.llm}
+          stage={status.stage}
+          showLogout={env.APP_ENV === 'production' && env.CONSOLE_PASSWORD.length > 0}
+        />
         <main className="flex-1 px-6 py-5">
           <div className="animate-rise">{children}</div>
         </main>

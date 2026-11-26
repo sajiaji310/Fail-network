@@ -9,6 +9,7 @@ export type ParentCache = Map<string, { id: string; firstSeen: Date } | null>;
 
 export type RecordAlertInput = {
   deviceId: string;
+  tenantId?: string;
   type: string;
   severity: Severity;
   metric?: string | null;
@@ -60,6 +61,7 @@ export async function recordAlert(
 
   const normalized = await normalizeOccurrence({
     fingerprintId: fingerprint.id,
+    tenantId: input.tenantId ?? 'default',
     severity: input.severity,
     value: input.value ?? null,
     threshold: input.threshold ?? null,
@@ -134,16 +136,17 @@ export type AlertStats = {
   suppressedByType: Array<{ type: string; count: number }>;
 };
 
-export async function getAlertStats(): Promise<AlertStats> {
+export async function getAlertStats(tenantId = 'default'): Promise<AlertStats> {
+  const scope = { tenantId };
   const [total, active, suppressed, resolved, agg, grouped] = await Promise.all([
-    db.alert.count(),
-    db.alert.count({ where: { status: 'ACTIVE' } }),
-    db.alert.count({ where: { status: 'SUPPRESSED' } }),
-    db.alert.count({ where: { status: 'RESOLVED' } }),
-    db.alert.aggregate({ _sum: { count: true } }),
+    db.alert.count({ where: scope }),
+    db.alert.count({ where: { ...scope, status: 'ACTIVE' } }),
+    db.alert.count({ where: { ...scope, status: 'SUPPRESSED' } }),
+    db.alert.count({ where: { ...scope, status: 'RESOLVED' } }),
+    db.alert.aggregate({ where: scope, _sum: { count: true } }),
     db.alert.groupBy({
       by: ['fingerprintId'],
-      where: { status: 'SUPPRESSED' },
+      where: { ...scope, status: 'SUPPRESSED' },
       _count: { _all: true },
     }),
   ]);
@@ -184,6 +187,7 @@ export type AlertListQuery = {
   to?: Date;
   page: number;
   pageSize: number;
+  tenantId?: string;
 };
 
 export type AlertListItem = {
@@ -216,6 +220,7 @@ export async function listAlerts(query: AlertListQuery): Promise<AlertListResult
   if (query.type) fingerprintFilter.type = query.type;
 
   const where: Prisma.AlertWhereInput = {
+    tenantId: query.tenantId ?? 'default',
     ...(query.status?.length ? { status: { in: query.status } } : {}),
     ...(query.severity?.length ? { severity: { in: query.severity } } : {}),
     ...(Object.keys(fingerprintFilter).length ? { fingerprint: fingerprintFilter } : {}),

@@ -51,11 +51,12 @@ function cutoffOf(now: Date, days: number): Date | null {
 }
 
 export async function runRetention(
-  options: { dryRun?: boolean; now?: Date; policy?: RetentionPolicy } = {},
+  options: { dryRun?: boolean; now?: Date; policy?: RetentionPolicy; tenantId?: string } = {},
 ): Promise<RetentionReport> {
   const dryRun = options.dryRun ?? true;
   const now = options.now ?? new Date();
   const policy = options.policy ?? getRetentionPolicy();
+  const tenantId = options.tenantId ?? 'default';
 
   const metricCutoff = cutoffOf(now, policy.metricDays);
   const auditCutoff = cutoffOf(now, policy.auditDays);
@@ -76,26 +77,31 @@ export async function runRetention(
 
   if (metricCutoff) {
     if (dryRun) {
-      report.deleted.metrics = await db.metricSample.count({ where: { at: { lt: metricCutoff } } });
+      report.deleted.metrics = await db.metricSample.count({
+        where: { tenantId, at: { lt: metricCutoff } },
+      });
     } else {
       report.deleted.metrics = (
-        await db.metricSample.deleteMany({ where: { at: { lt: metricCutoff } } })
+        await db.metricSample.deleteMany({ where: { tenantId, at: { lt: metricCutoff } } })
       ).count;
     }
   }
 
   if (auditCutoff) {
     if (dryRun) {
-      report.deleted.audit = await db.auditLog.count({ where: { at: { lt: auditCutoff } } });
+      report.deleted.audit = await db.auditLog.count({
+        where: { tenantId, at: { lt: auditCutoff } },
+      });
     } else {
       report.deleted.audit = (
-        await db.auditLog.deleteMany({ where: { at: { lt: auditCutoff } } })
+        await db.auditLog.deleteMany({ where: { tenantId, at: { lt: auditCutoff } } })
       ).count;
     }
   }
 
   if (batchCutoff) {
     const where = {
+      tenantId,
       createdAt: { lt: batchCutoff },
       // 跑着的批次不删：进度条还在用这一行
       status: { in: ['DONE' as const, 'FAILED' as const] },
@@ -108,7 +114,11 @@ export async function runRetention(
   }
 
   if (incidentCutoff) {
-    const where = { status: 'CLOSED' as const, resolvedAt: { lt: incidentCutoff } };
+    const where = {
+      tenantId,
+      status: 'CLOSED' as const,
+      resolvedAt: { lt: incidentCutoff },
+    };
     if (dryRun) {
       report.deleted.incidents = await db.incident.count({ where });
     } else {

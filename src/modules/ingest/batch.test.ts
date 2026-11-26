@@ -24,7 +24,7 @@ function alert(externalKey: string, metric: string): RawAlert {
 describe.skipIf(!hasDb)('导入批处理（依赖真实 DB）', () => {
   beforeAll(async () => {
     await db.device.upsert({
-      where: { name: DEVICE },
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
       create: { name: DEVICE, type: 'SWITCH', layer: 3, site: '测试' },
       update: {},
     });
@@ -35,7 +35,9 @@ describe.skipIf(!hasDb)('导入批处理（依赖真实 DB）', () => {
   afterAll(async () => {
     await db.alert.deleteMany({ where: { externalKey: { startsWith: PREFIX } } });
     await db.ingestBatch.deleteMany({ where: { source: { startsWith: PREFIX } } });
-    const device = await db.device.findUnique({ where: { name: DEVICE } });
+    const device = await db.device.findUnique({
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
+    });
     if (device) {
       await db.alertFingerprint.deleteMany({ where: { deviceId: device.id } });
       await db.device.delete({ where: { id: device.id } });

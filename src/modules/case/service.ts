@@ -276,8 +276,12 @@ export async function listCases(query: CaseQuery = {}): Promise<CaseListResult> 
 }
 
 /** 标签计数：给案例库的筛选项用，只统计最近 200 条，避免全表扫 */
-export async function getCaseTagStats(limit = 12): Promise<{ tag: string; count: number }[]> {
+export async function getCaseTagStats(
+  limit = 12,
+  tenantId = 'default',
+): Promise<{ tag: string; count: number }[]> {
   const rows = await db.caseRecord.findMany({
+    where: { tenantId },
     orderBy: { createdAt: 'desc' },
     take: 200,
     select: { tags: true },
@@ -301,13 +305,13 @@ export type CaseStats = {
   rejected: number;
 };
 
-export async function getCaseStats(): Promise<CaseStats> {
+export async function getCaseStats(tenantId = 'default'): Promise<CaseStats> {
   const since = new Date(Date.now() - 7 * 24 * 3600_000);
   try {
     const [total, last7d, grouped] = await Promise.all([
-      db.caseRecord.count(),
-      db.caseRecord.count({ where: { createdAt: { gte: since } } }),
-      db.caseRecord.groupBy({ by: ['verification'], _count: { _all: true } }),
+      db.caseRecord.count({ where: { tenantId } }),
+      db.caseRecord.count({ where: { tenantId, createdAt: { gte: since } } }),
+      db.caseRecord.groupBy({ by: ['verification'], where: { tenantId }, _count: { _all: true } }),
     ]);
     const count = (v: CaseVerification) =>
       grouped.find((g) => g.verification === v)?._count._all ?? 0;
@@ -345,9 +349,10 @@ export async function setCaseVerification(input: {
   by: string;
   note?: string | null;
   now?: Date;
+  tenantId?: string;
 }): Promise<CaseVerificationResult | null> {
-  const existing = await db.caseRecord.findUnique({
-    where: { id: input.id },
+  const existing = await db.caseRecord.findFirst({
+    where: { id: input.id, tenantId: input.tenantId ?? 'default' },
     select: { id: true, incident: { select: { code: true } } },
   });
   if (!existing) return null;
@@ -384,15 +389,17 @@ export async function searchCases(params: {
   q?: string;
   incidentId?: string;
   limit?: number;
+  tenantId?: string;
 }): Promise<CaseListItem[]> {
   const limit = Math.min(20, Math.max(1, params.limit ?? 3));
+  const tenantId = params.tenantId ?? 'default';
   let terms = (params.q ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 6);
   let excludeIncidentId: string | null = null;
 
   if (params.incidentId) {
     // incidentId 参数可能是 code（INC-YYYYMMDD-NNN），先解析出真实 id 用于排除自身
     const incident = await db.incident.findFirst({
-      where: { OR: [{ id: params.incidentId }, { code: params.incidentId }] },
+      where: { tenantId, OR: [{ id: params.incidentId }, { code: params.incidentId }] },
       select: {
         id: true,
         alerts: {
@@ -417,6 +424,7 @@ export async function searchCases(params: {
 
   const rows = await db.caseRecord.findMany({
     where: {
+      tenantId,
       OR: terms.flatMap((term) => [
         { title: { contains: term, mode: 'insensitive' } },
         { symptom: { contains: term, mode: 'insensitive' } },

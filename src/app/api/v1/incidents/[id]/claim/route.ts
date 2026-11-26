@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited } from '@/modules/audit/service';
@@ -48,7 +49,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         requestId: traceId,
       },
       async () => {
-        const claimed = await claimIncident({ idOrCode: id, ...parsed.data });
+        const claimed = await claimIncident({
+          idOrCode: id,
+          ...parsed.data,
+          tenantId: tenantOf(req),
+        });
         if (!claimed) throw new AppError('NOT_FOUND', `事件不存在：${id}`);
         return claimed;
       },
@@ -76,7 +81,7 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
         requestId: traceId,
       },
       async () => {
-        const released = await releaseIncident({ idOrCode: id });
+        const released = await releaseIncident({ idOrCode: id, tenantId: tenantOf(req) });
         if (!released) throw new AppError('NOT_FOUND', `事件不存在：${id}`);
         return released;
       },

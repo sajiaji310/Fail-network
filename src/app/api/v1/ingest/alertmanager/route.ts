@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  *   - name: netscope
  *     webhook_configs:
  *       - url: 'http://netscope:3000/api/v1/ingest/alertmanager?source=prod-am'
- *         send_resolved: true   # 恢复告警会被忽略，但计入 skipped
+ *         send_resolved: true   # 恢复通知会按 fingerprint + startsAt 关闭已有周期
  * ```
  */
 export async function POST(req: Request) {

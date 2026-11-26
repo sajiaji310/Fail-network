@@ -18,6 +18,7 @@ export type GenerateReportOptions = {
   /** false 时只返回文本不落库（导出/预览用） */
   save?: boolean;
   note?: string | null;
+  tenantId?: string;
 };
 
 export type GeneratedReport = {
@@ -53,7 +54,7 @@ export async function generateReport(
   idOrCode: string,
   options: GenerateReportOptions = {},
 ): Promise<GeneratedReport | null> {
-  const detail = await getIncidentDetail(idOrCode);
+  const detail = await getIncidentDetail(idOrCode, options.tenantId ?? 'default');
   if (!detail) return null;
 
   const now = options.now ?? new Date();
@@ -123,9 +124,12 @@ export async function generateReport(
 }
 
 /** 最近一次落库的报告（详情页直接展示，避免每次进页面都重新生成） */
-export async function getLatestReport(idOrCode: string): Promise<StoredReport | null> {
+export async function getLatestReport(
+  idOrCode: string,
+  tenantId = 'default',
+): Promise<StoredReport | null> {
   const incident = await db.incident.findFirst({
-    where: { OR: [{ id: idOrCode }, { code: idOrCode }] },
+    where: { tenantId, OR: [{ id: idOrCode }, { code: idOrCode }] },
     select: {
       reports: {
         orderBy: { createdAt: 'desc' },

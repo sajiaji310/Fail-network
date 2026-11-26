@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
 import { audited, resolveActor } from '@/modules/audit/service';
@@ -47,6 +48,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
           verification: parsed.data.verification,
           by: resolveActor(req),
           note: parsed.data.note ?? null,
+          tenantId: tenantOf(req),
         });
         if (!updated) {
           throw new AppError('NOT_FOUND', `案例不存在：${id}`);

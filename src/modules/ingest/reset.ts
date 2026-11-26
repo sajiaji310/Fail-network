@@ -11,13 +11,13 @@ import { db } from '@/lib/db';
  */
 export type ResetSummary = { alerts: number; incidents: number; changes: number };
 
-export async function resetDemoData(): Promise<ResetSummary> {
-  // 告警全部来自注入/导入（seed 不产告警），所以整表清；
-  // 事件只删聚合出来的那些，seed 的 30 条历史事件（clusterKey 为空）必须保留
+export async function resetDemoData(tenantId = 'default'): Promise<ResetSummary> {
+  // 告警全部来自注入/导入（seed 不产告警），所以清该租户的告警；
+  // 事件只删聚合出来的那些，seed 的历史事件（clusterKey 为空）必须保留
   const [alerts, incidents, changes] = await db.$transaction([
-    db.alert.deleteMany({ where: {} }),
-    db.incident.deleteMany({ where: { clusterKey: { not: null } } }),
-    db.changeRecord.deleteMany({ where: {} }),
+    db.alert.deleteMany({ where: { tenantId } }),
+    db.incident.deleteMany({ where: { tenantId, clusterKey: { not: null } } }),
+    db.changeRecord.deleteMany({ where: { device: { tenantId } } }),
   ]);
 
   return { alerts: alerts.count, incidents: incidents.count, changes: changes.count };

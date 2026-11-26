@@ -69,13 +69,13 @@ export type DataSummary = {
   seedReady: boolean;
 };
 
-export async function getDataSummary(): Promise<DataSummary> {
+export async function getDataSummary(tenantId = 'default'): Promise<DataSummary> {
   try {
     const [devices, links, cases, alerts] = await Promise.all([
-      db.device.count(),
-      db.topologyLink.count(),
-      db.caseRecord.count(),
-      db.alert.count(),
+      db.device.count({ where: { tenantId } }),
+      db.topologyLink.count({ where: { source: { tenantId }, target: { tenantId } } }),
+      db.caseRecord.count({ where: { tenantId } }),
+      db.alert.count({ where: { tenantId } }),
     ]);
     return {
       devices,

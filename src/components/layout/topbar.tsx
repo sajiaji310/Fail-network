@@ -1,4 +1,5 @@
 import { Database, Sparkles } from 'lucide-react';
+import { buttonClass } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
 import type { DbStatus } from '@/modules/system/service';
 
@@ -6,6 +7,7 @@ type Props = {
   db: DbStatus;
   llm: 'live' | 'mock' | 'fallback';
   stage: string;
+  showLogout?: boolean;
 };
 
 const LLM_LABEL: Record<Props['llm'], string> = {
@@ -18,7 +20,7 @@ const LLM_LABEL: Record<Props['llm'], string> = {
  * 顶栏做成半透明吸顶：滚动长页面（事件列表、详情）时环境状态始终可见，
  * 而且内容从下面透过去，视觉上比一条纯白横杠更轻。
  */
-export function Topbar({ db, llm, stage }: Props) {
+export function Topbar({ db, llm, stage, showLogout = false }: Props) {
   const dbUp = db === 'up';
 
   return (
@@ -50,6 +52,13 @@ export function Topbar({ db, llm, stage }: Props) {
           <Sparkles size={12} strokeWidth={1.7} className="text-text-tertiary" />
           {LLM_LABEL[llm]}
         </span>
+        {showLogout ? (
+          <form action="/api/console/logout" method="post">
+            <button type="submit" className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+              退出
+            </button>
+          </form>
+        ) : null}
       </div>
     </header>
   );

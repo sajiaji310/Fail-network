@@ -16,7 +16,7 @@ let seq = 0;
 
 async function makeAlert(deviceName: string, type: string, at: Date): Promise<string> {
   const device = await db.device.findUniqueOrThrow({
-    where: { name: deviceName },
+    where: { tenantId_name: { tenantId: 'default', name: deviceName } },
     select: { id: true },
   });
   const metric = `split-test`;

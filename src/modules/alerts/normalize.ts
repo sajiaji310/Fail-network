@@ -77,6 +77,7 @@ export function decideCycle(
 
 export type NormalizeInput = {
   fingerprintId: string;
+  tenantId?: string;
   severity: Severity;
   value?: number | null;
   threshold?: number | null;
@@ -108,7 +109,11 @@ export async function normalizeOccurrence(input: NormalizeInput): Promise<Normal
   };
 
   const active = await db.alert.findFirst({
-    where: { fingerprintId: input.fingerprintId, status: { in: ['ACTIVE', 'SUPPRESSED'] } },
+    where: {
+      fingerprintId: input.fingerprintId,
+      tenantId: input.tenantId ?? 'default',
+      status: { in: ['ACTIVE', 'SUPPRESSED'] },
+    },
     orderBy: { cycleStart: 'desc' },
     select: {
       id: true,
@@ -157,6 +162,7 @@ export async function normalizeOccurrence(input: NormalizeInput): Promise<Normal
     const created = await db.alert.create({
       data: {
         fingerprintId: input.fingerprintId,
+        tenantId: input.tenantId ?? 'default',
         severity: input.severity,
         value: input.value ?? null,
         threshold: input.threshold ?? null,

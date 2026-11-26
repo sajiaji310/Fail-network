@@ -20,6 +20,8 @@ const EnvSchema = z.object({
   // —— 安全边界（P0）：local 放行，production 才强制鉴权 ——
   APP_ENV: z.enum(['local', 'staging', 'production']).default('local'),
   API_KEY: z.string().default(''),
+  /** production 下控制台页面的口令。local 不校验。空字符串表示未配置。 */
+  CONSOLE_PASSWORD: z.string().default(''),
   RATE_LIMIT_WRITE_PER_MIN: z.coerce.number().int().min(1).default(30),
   RATE_LIMIT_READ_PER_MIN: z.coerce.number().int().min(1).default(120),
   BODY_LIMIT_BYTES: z.coerce

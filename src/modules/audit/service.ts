@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = [
   'source.alias',
   'scenario.inject',
   'correlation.run',
+  'correlation.replay',
   'report.generate',
   'case.verify',
   'incident.split',
@@ -80,7 +81,11 @@ export function resolveActor(req: Request): string {
   return key.length >= 12 ? `api-key:…${key.slice(-4)}` : 'api-key';
 }
 
-export function resolveIp(req: Request): string | null {
+export function resolveIp(
+  req: Request,
+  trustProxy = process.env.TRUST_PROXY_HEADERS === 'true',
+): string | null {
+  if (!trustProxy) return null;
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded) return forwarded.split(',')[0]!.trim() || null;
   return req.headers.get('x-real-ip')?.trim() || null;

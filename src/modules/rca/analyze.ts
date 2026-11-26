@@ -82,9 +82,12 @@ function parseResult(content: string): ParsedResult {
 }
 
 /** 从库里读回上一次研判（命中缓存时不再调用模型） */
-async function readCachedAnalysis(idOrCode: string): Promise<AnalysisOutcome | null> {
+async function readCachedAnalysis(
+  idOrCode: string,
+  tenantId = 'default',
+): Promise<AnalysisOutcome | null> {
   const row = await db.incident.findFirst({
-    where: { OR: [{ id: idOrCode }, { code: idOrCode }] },
+    where: { tenantId, OR: [{ id: idOrCode }, { code: idOrCode }] },
     select: {
       id: true,
       code: true,
@@ -206,10 +209,11 @@ async function produceResult(
 
 export async function runAnalysis(
   idOrCode: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; tenantId?: string } = {},
 ): Promise<AnalysisOutcome | null> {
+  const tenantId = opts.tenantId ?? 'default';
   if (!opts.force) {
-    const cached = await readCachedAnalysis(idOrCode);
+    const cached = await readCachedAnalysis(idOrCode, tenantId);
     if (cached) return cached;
   }
 
@@ -220,7 +224,7 @@ export async function runAnalysis(
 
   try {
     enterStage(progressKey, 'CONTEXT');
-    const ctx = await buildIncidentContext(idOrCode);
+    const ctx = await buildIncidentContext(idOrCode, tenantId);
     if (!ctx) {
       failAnalysis(progressKey, '事件不存在');
       return null;

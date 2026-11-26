@@ -7,7 +7,9 @@ import { classifyAlertName, numberFromAnnotations, pickInstanceLabel, stripPort 
  *
  * 现实约束：
  * - Alertmanager 的 `endsAt` 在 firing 时是 `0001-01-01T00:00:00Z` 这个零值，不是"没给"；
- * - `resolved` 状态的告警不该建事件（3 秒自愈的抖动不需要值班人看），这里直接跳过并计数；
+ * - `resolved` 不新建周期，但必须进导入主链路，把已有 ACTIVE 周期关掉；
+ *   一次告警周期的外部键是 `fingerprint + startsAt`，恢复后再次 firing 会换 startsAt，不能被旧键吃掉；
+ * - firing 的 `endsAt` 经常是预计恢复时间，不能写成 lastSeen；lastSeen 用接收时间；
  * - `instance` 永远带端口，设备匹配前必须剥掉端口。
  *
  * 不进 `severity` 推断的坑：Alertmanager 的 severity 是**人写的标签**，
@@ -40,7 +42,7 @@ export const AlertmanagerPayloadSchema = z
 type AmAlert = z.infer<typeof AlertSchema>;
 
 export type AmParseResult = ParseResult & {
-  /** resolved 告警：不建事件，但要让人知道"收是收到了，只是不用处理" */
+  /** 缺关键字段、整包无法解析时的丢弃计数。resolved 不再走这里。 */
   skipped: number;
 };
 
@@ -80,7 +82,19 @@ export function severityOfAlertmanager(raw: string | undefined): 'P0' | 'P1' | '
 
 type ConvertResult = { issue: string } | { alert: RawAlert };
 
-function toRawAlert(alert: AmAlert, fallbackTime: Date): ConvertResult {
+function cycleState(
+  alertStatus: string | undefined,
+  payloadStatus: string | undefined,
+): 'FIRING' | 'RESOLVED' {
+  const raw = (alertStatus ?? payloadStatus ?? 'firing').trim().toLowerCase();
+  return raw === 'resolved' ? 'RESOLVED' : 'FIRING';
+}
+
+function toRawAlert(
+  alert: AmAlert,
+  fallbackTime: Date,
+  payloadStatus: string | undefined,
+): ConvertResult {
   const labels = alert.labels ?? {};
   const annotations = alert.annotations ?? {};
   const alertname = labels.alertname ?? annotations.summary ?? 'Alertmanager 告警';
@@ -89,22 +103,21 @@ function toRawAlert(alert: AmAlert, fallbackTime: Date): ConvertResult {
 
   const startsAt = parseAmTime(alert.startsAt) ?? fallbackTime;
   const endsAt = parseAmTime(alert.endsAt);
-  // firing 且给了 endsAt（非零值）= 上游预告了恢复时间；当前版本不消费，留在 raw 里备查
+  const state = cycleState(alert.status, payloadStatus);
+  const fingerprint = alert.fingerprint ?? labels.fingerprint;
+  // `|` 分开 fingerprint 和 startsAt：ISO 时间本身含冒号，前缀匹配不能用冒号切
+  const externalKey = fingerprint ? `am:${fingerprint}|${startsAt.toISOString()}` : undefined;
 
   const value =
     numberFromAnnotations(annotations, ['value', 'current', 'observed']) ??
     (labels.value !== undefined ? Number(labels.value) : undefined);
   const threshold = numberFromAnnotations(annotations, ['threshold', 'limit']);
 
-  const externalKey = alert.fingerprint
-    ? `am:${alert.fingerprint}`
-    : labels.fingerprint
-      ? `am:${labels.fingerprint}`
-      : undefined;
-
   return {
     alert: {
       externalKey,
+      state,
+      refreshOnDuplicate: state === 'FIRING',
       deviceName,
       type: classifyAlertName(alertname),
       severity: severityOfAlertmanager(labels.severity),
@@ -113,11 +126,12 @@ function toRawAlert(alert: AmAlert, fallbackTime: Date): ConvertResult {
       threshold: Number.isFinite(threshold) ? (threshold as number) : undefined,
       message: (annotations.summary ?? annotations.description ?? alertname).slice(0, 500),
       firstSeen: startsAt,
-      lastSeen: endsAt ?? undefined,
+      // firing 的 endsAt 可能是预计恢复时间，写进 lastSeen 会把周期和聚合窗口推到未来
+      lastSeen: state === 'RESOLVED' ? (endsAt ?? fallbackTime) : fallbackTime,
       count: 1,
       raw: {
         adapter: 'alertmanager',
-        status: alert.status ?? null,
+        status: alert.status ?? payloadStatus ?? null,
         labels,
         annotations,
         generatorURL: alert.generatorURL ?? null,
@@ -145,14 +159,10 @@ export function parseAlertmanager(payload: unknown, now: Date = new Date()): AmP
 
   const rows: AmParseResult['rows'] = [];
   const issues: ParseIssue[] = [];
-  let skipped = 0;
+  const skipped = 0;
 
   parsed.data.alerts.forEach((alert, index) => {
-    if (alert.status === 'resolved') {
-      skipped++;
-      return;
-    }
-    const result = toRawAlert(alert, now);
+    const result = toRawAlert(alert, now, parsed.data.status);
     if ('issue' in result) {
       issues.push({ index, message: result.issue });
       return;

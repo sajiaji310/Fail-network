@@ -32,7 +32,7 @@ export const ENDPOINTS: EndpointDoc[] = [
     sample: `curl -sS -X POST 'http://localhost:3000/api/v1/ingest/alertmanager?source=prod-am' \\
   -H 'content-type: application/json' -H 'x-api-key: $API_KEY' \\
   -d '{"version":"4","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"InterfaceDown","instance":"CORE-SW-01:9100","severity":"critical"},"annotations":{"summary":"Gi0/1 link down"},"startsAt":"2026-11-20T10:00:00Z","fingerprint":"demo-1"}]}'`,
-    note: '已恢复（resolved）的告警会被跳过并计入 skipped；instance 的端口号自动剥掉。',
+    note: 'resolved 按 fingerprint + startsAt 关闭已有周期，计入 resolved；未见过的恢复通知不新建行。instance 的端口号自动剥掉。',
   },
   {
     kind: 'zabbix',

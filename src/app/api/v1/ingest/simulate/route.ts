@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { readJsonLimited } from '@/lib/http/body';
@@ -51,10 +52,11 @@ export async function POST(req: Request) {
         requestId: traceId,
       },
       async () => {
-        const resetSummary = reset ? await resetDemoData() : null;
+        const tenantId = tenantOf(req);
+        const resetSummary = reset ? await resetDemoData(tenantId) : null;
         let run;
         try {
-          run = await runScenario(scenario, seed);
+          run = await runScenario(scenario, seed, tenantId);
         } catch (error) {
           if (error instanceof Error && error.message.startsWith('剧本名不合法')) {
             throw new AppError('VALIDATION_FAILED', error.message);

@@ -76,20 +76,20 @@ API_KEY="sk-legacy-xxx"
 
 ## 数据源接入
 
-| Method | Path                          | 说明                  | 备注                                                                                  |
-| ------ | ----------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/ingest/alertmanager` | Prometheus webhook    | Alertmanager v4 payload；`resolved` 计入 `skipped`；`instance` 自动剥端口             |
-| POST   | `/api/v1/ingest/zabbix`       | Zabbix webhook        | 接受单对象 / `{problems:[...]}` / 裸数组；severity 支持 0–5 与 High/Disaster 文本     |
-| GET    | `/api/v1/ingest/batches`      | 最近导入批次          | `?limit=20&sweep=1`；`sweep` 会把进程中断留下的 RUNNING 批次标成 FAILED               |
-| GET    | `/api/v1/ingest/batches/[id]` | 批次状态              | 返回 `{status, total, processed, accepted, deduped, failed, progress, issues, error}` |
-| POST   | `/api/v1/sources/aliases`     | 新增设备别名（ADMIN） | body `{alias, deviceName, note?}`；alias 全局唯一，冲突返回 400                       |
+| Method | Path                          | 说明                  | 备注                                                                                                                      |
+| ------ | ----------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/ingest/alertmanager` | Prometheus webhook    | Alertmanager v4 payload；`resolved` 关闭已有周期并计入 `resolved`；周期键是 fingerprint + startsAt；`instance` 自动剥端口 |
+| POST   | `/api/v1/ingest/zabbix`       | Zabbix webhook        | 接受单对象 / `{problems:[...]}` / 裸数组；severity 支持 0–5 与 High/Disaster 文本                                         |
+| GET    | `/api/v1/ingest/batches`      | 最近导入批次          | `?limit=20&sweep=1`；`sweep` 会把进程中断留下的 RUNNING 批次标成 FAILED                                                   |
+| GET    | `/api/v1/ingest/batches/[id]` | 批次状态              | 返回 `{status, total, processed, accepted, deduped, failed, progress, issues, error}`                                     |
+| POST   | `/api/v1/sources/aliases`     | 新增设备别名（ADMIN） | body `{alias, deviceName, note?}`；alias 在当前租户内唯一，冲突返回 400                                                   |
 
 两个 webhook 的响应形状一致：
 
 ```jsonc
 // 同步（≤ 500 行）
-{ "mode": "sync", "source": "prod-am", "accepted": 1, "deduped": 0, "suppressed": 1,
-  "failed": 0, "skipped": 1, "issues": [] }
+{ "mode": "sync", "source": "prod-am", "accepted": 1, "deduped": 0, "resolved": 0, "suppressed": 1,
+  "failed": 0, "skipped": 0, "issues": [] }
 
 // 异步（> 500 行）：HTTP 202 + x-batch-id
 { "mode": "async", "batchId": "cmwp5...", "total": 30000, "skipped": 0, "issues": [] }

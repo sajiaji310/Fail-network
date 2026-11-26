@@ -62,19 +62,32 @@ export function percentile(values: readonly number[], p: number): number | null 
   return sorted[index] ?? null;
 }
 
-export async function getOpsMetrics(window = defaultWindow()): Promise<OpsMetrics> {
+export async function getOpsMetrics(
+  window = defaultWindow(),
+  tenantId = 'default',
+): Promise<OpsMetrics> {
   const { from, to } = window;
+  const incidentScope = { tenantId, startedAt: { gte: from, lte: to } };
 
   const [created, closedRows, reopened, verdictRows] = await Promise.all([
-    db.incident.count({ where: { startedAt: { gte: from, lte: to } } }),
+    db.incident.count({ where: incidentScope }),
     db.incident.findMany({
-      where: { status: 'CLOSED', resolvedAt: { gte: from, lte: to }, mttrSeconds: { not: null } },
+      where: {
+        tenantId,
+        status: 'CLOSED',
+        resolvedAt: { gte: from, lte: to },
+        mttrSeconds: { not: null },
+      },
       select: { mttrSeconds: true },
     }),
-    db.incident.count({ where: { startedAt: { gte: from, lte: to }, reopenedCount: { gt: 0 } } }),
+    db.incident.count({ where: { ...incidentScope, reopenedCount: { gt: 0 } } }),
     db.hypothesis.groupBy({
       by: ['verdict'],
-      where: { verdict: { not: null }, createdAt: { gte: from, lte: to } },
+      where: {
+        verdict: { not: null },
+        createdAt: { gte: from, lte: to },
+        incident: { tenantId },
+      },
       _count: { _all: true },
     }),
   ]);
@@ -92,7 +105,7 @@ export async function getOpsMetrics(window = defaultWindow()): Promise<OpsMetric
   const rejected = verdictRows.find((row) => row.verdict === 'REJECTED')?._count._all ?? 0;
 
   const suppressedAlerts = await db.alert.findMany({
-    where: { status: 'SUPPRESSED', suppressedByAlertId: { not: null } },
+    where: { tenantId, status: 'SUPPRESSED', suppressedByAlertId: { not: null } },
     select: {
       id: true,
       lastSeen: true,
@@ -108,28 +121,30 @@ export async function getOpsMetrics(window = defaultWindow()): Promise<OpsMetric
   );
 
   const [batches, batchGroups, realAlerts, simulatedAlerts, metricSamples] = await Promise.all([
-    db.ingestBatch.count({ where: { createdAt: { gte: from, lte: to } } }),
+    db.ingestBatch.count({ where: { tenantId, createdAt: { gte: from, lte: to } } }),
     db.ingestBatch.groupBy({
       by: ['kind'],
-      where: { createdAt: { gte: from, lte: to } },
+      where: { tenantId, createdAt: { gte: from, lte: to } },
       _count: { _all: true },
       _sum: { accepted: true, failed: true },
     }),
     db.alert.count({
       where: {
+        tenantId,
         firstSeen: { gte: from, lte: to },
         OR: [{ externalKey: { startsWith: 'am:' } }, { externalKey: { startsWith: 'zbx:' } }],
       },
     }),
     db.alert.count({
       where: {
+        tenantId,
         firstSeen: { gte: from, lte: to },
         NOT: {
           OR: [{ externalKey: { startsWith: 'am:' } }, { externalKey: { startsWith: 'zbx:' } }],
         },
       },
     }),
-    db.metricSample.count({ where: { at: { gte: from, lte: to } } }),
+    db.metricSample.count({ where: { tenantId, at: { gte: from, lte: to } } }),
   ]);
 
   return {

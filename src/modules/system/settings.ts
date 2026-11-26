@@ -239,6 +239,7 @@ const ACTION_LABEL: Record<string, string> = {
   'alert.ingest': '告警导入',
   'scenario.inject': '剧本注入',
   'correlation.run': '手动聚合',
+  'correlation.replay': '历史回放',
   'report.generate': '生成报告',
   'case.verify': '案例确认',
   'incident.split': '事件拆分',

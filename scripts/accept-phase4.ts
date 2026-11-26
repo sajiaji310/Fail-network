@@ -238,7 +238,8 @@ async function checkIngest(): Promise<void> {
   const now = Date.now();
   const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
 
-  await check('Alertmanager webhook（resolved 跳过 / 别名命中）', async () => {
+  await check('Alertmanager webhook（firing 入库，同周期 resolved 关闭）', async () => {
+    const startsAt = iso(-60_000);
     const res = await post('/api/v1/ingest/alertmanager?source=acceptance', {
       version: '4',
       status: 'firing',
@@ -251,7 +252,7 @@ async function checkIngest(): Promise<void> {
             severity: 'critical',
           },
           annotations: { summary: 'Gi1/0/1 link down（验收）' },
-          startsAt: iso(-60_000),
+          startsAt,
           fingerprint: `acc-${stamp}-1`,
         },
         {
@@ -261,9 +262,9 @@ async function checkIngest(): Promise<void> {
             instance: 'core-sw-01.lab:9100',
             severity: 'critical',
           },
-          startsAt: iso(-600_000),
-          endsAt: iso(-120_000),
-          fingerprint: `acc-${stamp}-2`,
+          startsAt,
+          endsAt: iso(-1_000),
+          fingerprint: `acc-${stamp}-1`,
         },
       ],
     });
@@ -271,11 +272,12 @@ async function checkIngest(): Promise<void> {
       return { ok: false, detail: errText(res) };
     }
     const mode = str(res.json?.['mode']);
-    const skipped = num(res.json?.['skipped']);
+    const accepted = num(res.json?.['accepted']);
+    const resolved = num(res.json?.['resolved']);
     const failed = num(res.json?.['failed']);
     return {
-      ok: (mode === 'sync' || mode === 'async') && skipped === 1 && failed === 0,
-      detail: `mode=${mode} 跳过已恢复=${skipped} 失败=${failed} 入库=${num(res.json?.['accepted'])}`,
+      ok: (mode === 'sync' || mode === 'async') && accepted === 1 && resolved === 1 && failed === 0,
+      detail: `mode=${mode} 入库=${accepted} 恢复=${resolved} 失败=${failed}`,
     };
   });
 

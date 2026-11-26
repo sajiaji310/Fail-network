@@ -24,11 +24,13 @@ export type SuppressOutcome = {
 export async function findActiveParent(
   deviceId: string,
   client: Prisma.TransactionClient | typeof db = db,
+  excludeIds?: ReadonlySet<string>,
 ): Promise<{ id: string; firstSeen: Date } | null> {
   const row = await client.alert.findFirst({
     where: {
       status: 'ACTIVE',
       fingerprint: { deviceId, type: { in: [...PARENT_ALERT_TYPES] } },
+      ...(excludeIds && excludeIds.size > 0 ? { id: { notIn: [...excludeIds] } } : {}),
     },
     orderBy: { lastSeen: 'desc' },
     select: { id: true, firstSeen: true },
@@ -75,6 +77,8 @@ async function loadParent(
 export async function suppressByParent(
   parentAlertId: string,
   now: Date = new Date(),
+  /** 同一次导入里尚未“到达”的告警。父告警不能提前压到它们，否则回溯计数会把后到的子告警算进去。 */
+  excludeIds?: ReadonlySet<string>,
 ): Promise<SuppressOutcome> {
   return db.$transaction(
     async (tx) => {
@@ -95,7 +99,9 @@ export async function suppressByParent(
         select: { id: true, fingerprint: { select: { type: true } }, incidentId: true },
       });
 
-      const targets = candidates.filter((c) => isSuppressible(c.fingerprint.type));
+      const targets = candidates.filter(
+        (c) => isSuppressible(c.fingerprint.type) && !excludeIds?.has(c.id),
+      );
       if (targets.length === 0) return { suppressedAlertIds: [], affectedIncidents: [] };
 
       const ids = targets.map((t) => t.id);

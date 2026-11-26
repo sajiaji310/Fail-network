@@ -44,15 +44,20 @@ describe('指标趋势（纯函数）', () => {
 describe.skipIf(!hasDb)('指标采样（依赖真实 DB）', () => {
   beforeAll(async () => {
     await db.device.upsert({
-      where: { name: DEVICE },
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
       create: { name: DEVICE, type: 'SWITCH', layer: 3, site: '测试' },
       update: {},
     });
     await db.deviceAlias.upsert({
-      where: { alias: 'test-metric-alias' },
+      where: { tenantId_alias: { tenantId: 'default', alias: 'test-metric-alias' } },
       create: {
         alias: 'test-metric-alias',
-        deviceId: (await db.device.findUniqueOrThrow({ where: { name: DEVICE } })).id,
+        tenantId: 'default',
+        deviceId: (
+          await db.device.findUniqueOrThrow({
+            where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
+          })
+        ).id,
         source: 'MANUAL',
       },
       update: {},
@@ -95,7 +100,9 @@ describe.skipIf(!hasDb)('指标采样（依赖真实 DB）', () => {
   });
 
   it('loadTrends 按 设备+指标 分组并算出趋势', async () => {
-    const device = await db.device.findUniqueOrThrow({ where: { name: DEVICE } });
+    const device = await db.device.findUniqueOrThrow({
+      where: { tenantId_name: { tenantId: 'default', name: DEVICE } },
+    });
     const base = Date.parse('2026-11-20T03:00:00Z');
     await recordSamples(
       [0, 5, 10].map((minute, index) => ({

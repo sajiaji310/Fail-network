@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     const alias = parsed.data.alias.trim().toLowerCase();
     const existing = await db.deviceAlias.findUnique({
-      where: { alias },
+      where: { tenantId_alias: { tenantId, alias } },
       select: { deviceId: true },
     });
     if (existing && existing.deviceId !== device.id) {
@@ -55,10 +55,11 @@ export async function POST(req: Request) {
     }
 
     const row = await db.deviceAlias.upsert({
-      where: { alias },
+      where: { tenantId_alias: { tenantId, alias } },
       create: {
         alias,
         deviceId: device.id,
+        tenantId,
         source: 'MANUAL',
         note: parsed.data.note ?? null,
       },

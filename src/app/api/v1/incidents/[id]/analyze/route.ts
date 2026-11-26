@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { tenantOf } from '@/lib/auth';
 import { AppError, toErrorBody } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 import { readJsonLimited } from '@/lib/http/body';
@@ -41,7 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       req,
       { action: 'analyze.run', target: id, detail: { force }, requestId: traceId },
       async () => {
-        const result = await runAnalysis(id, { force });
+        const result = await runAnalysis(id, { force, tenantId: tenantOf(req) });
         if (!result) {
           throw new AppError('NOT_FOUND', `事件不存在：${id}`);
         }
