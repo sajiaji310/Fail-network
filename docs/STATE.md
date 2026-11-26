@@ -16,6 +16,14 @@ README 补真实模型留出集对照、API.md / RELEASE / 框架文档补漂移
 （Device 30 / Incident 31 / Alert 113）。Docker 首次实机跑通（详见下方「Docker 实机验证」），
 容器启动由 `db push` 改为 `migrate deploy`。
 
+**CI 修复（2026-11-26 21:12）。** 仓库首次推送后 CI 连续 4 次红，逐层暴露四类问题并全部修掉：
+① `format:check` —— 两份历史文档从未格式化；② 集成测试缺种子数据（CI 只 `db:push`）——
+补 `db:seed`，并把 `db:push` 换成 `migrate deploy`，与容器启动一致；
+③ 报告时间依赖系统时区 —— CI 与容器默认 UTC，报告时间整体差 8 小时（真实缺陷），
+`report/template` 的 `stamp` 改为固定 `Asia/Shanghai`，Dockerfile 补 `TZ`；
+④ 降级测试未清 `LLM_MOCK` —— CI 的 `LLM_MOCK=true` 抢在「无 key 降级」之前生效。
+最终 `07432be` 的 run 45826550617 **12 步全 success**（含 build，87s）。
+
 上一轮（同日 18:20）：第 4 阶段验收已在本机跑完。生产服务在 3100，`/api/health` 为 `status=ok db=up llm=live`。`accept:phase4 --write` 对 3100 是 PASS 15 / FAIL 0，随后 `--clean`（告警 1 · 事件 0 · 批次 4 · 采样 4）。Playwright 2 条通过。`lint`、`tsc`、`next build`（产物在 `.next-serve`）都通过。8 张截图已按当前页面重生成。研判降级测试在文件内临时清空 Key，避免 `.env` 有 Key 时打到模型并超时。
 
 阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
@@ -500,6 +508,8 @@ L2 仍要求设备在影响面 ≤2 跳内。
   对抗例偏多是刻意的（MVP 阶段错判代价高于漏判），但正例只有 2 个的 test 集统计意义有限，
   分母小于 10 时一个场景就能挪动 14 个百分点
 - **留出集已用真实模型跑过**（2026-11-26，DeepSeek `deepseek-chat`）：结果在 `evals/results/test-live.md`。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、49017 token、fallback 0、平均 8969 ms。9 次调用都是 `source=LLM`，日志里没有 schema 修复，也没有超时降级。失败是 test-01（上游归因）、test-07（该空结论却给了假设）、test-08（拓扑全缺）。规则引擎基线 `evals/results/test.md` 没动，README 已加「真实模型对照」把两张表并排（2026-11-26 第二轮）
+- **CI 首次推送全红，已修**（2026-11-26）：4 次失败分别源于文档格式、缺 seed、报告时区、`LLM_MOCK`，
+  `07432be` 起全 12 步绿。CI 现在跑 `migrate deploy + db:seed`，与容器启动一致
 - **Docker 已实机验证**（2026-11-26 晚，本项目首次 `compose up`）：用临时 `docker-compose.verify.yml` 把宿主端口改成
   db `5433` / app `3002`（绕开本机占用的 5432），`up -d --build` 成功；容器内 `prisma migrate deploy`
   应用 `20261126000000_init`，seed 出 30 设备 / 60 链路 / 30 事件 / 30 案例 / 90 历史告警，
