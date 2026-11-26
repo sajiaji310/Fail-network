@@ -104,7 +104,9 @@ export function renderPrompt(ctx: ContextBundle): PromptPayload {
     const signals = buildDeviceSignals(ctx);
     if (signals.length > 0) {
       push();
-      push('[设备信号]（事实统计：每台设备报了多少条、哪些类型、是否有事件前变更；不含评分与排序）');
+      push(
+        '[设备信号]（事实统计：每台设备报了多少条、哪些类型、是否有事件前变更；不含评分与排序）',
+      );
       for (const s of signals) {
         const layer = s.layerLabel ? ` | ${s.layerLabel}` : '';
         const types = s.types.length > 0 ? ` | 类型 ${s.types.join('/')}` : ' | 无告警';

@@ -93,12 +93,13 @@ describe('补位发生时的行为', () => {
       cause: '另一台设备的光模块劣化',
       evidence: [{ type: 'ALERT', ref: 'alert-far-loss', desc: 'ACC-SW-11 丢包' }],
     };
-    const otherCategory: HypothesisDraft = { ...first, cause: '同一台设备的配置问题', category: 'CONFIG' };
+    const otherCategory: HypothesisDraft = {
+      ...first,
+      cause: '同一台设备的配置问题',
+      category: 'CONFIG',
+    };
 
-    const deduped = dedupeByCategoryAndDevice(
-      [first, duplicate, otherDevice, otherCategory],
-      ctx,
-    );
+    const deduped = dedupeByCategoryAndDevice([first, duplicate, otherDevice, otherCategory], ctx);
     // 键 = LINK|AGG-SW-02 / LINK|ACC-SW-11 / CONFIG|AGG-SW-02
     expect(deduped).toHaveLength(3);
     expect(deduped).toContain(first);
