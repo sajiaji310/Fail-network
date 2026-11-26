@@ -1,106 +1,119 @@
 # QA 报告 · NetScope 0.2 研判质量专项
 
 > 验收人：测试工程师 严过关 ｜ 日期：2026-11-26 ｜ 判据：`SPEC-0.2.md`（唯一，冲突以它为准）
-> A 组真实模型只跑一次，未重跑；C 组确定性重跑无信息增益，亦未重跑。
+> 验收对象：**commit `8b919dc`**（code 面干净，只余 `evals/results/*` 为本轮运行产物）
 
-## 0. 快照声明（先读这一节，否则下面的分数不可复核）
+## 0. 快照与作废声明
 
-| 项 | 实测 |
-| --- | --- |
-| git rev | `348d72d`（HEAD），但 **0.2 主体实现不在 HEAD 内**：`git status` 20 个文件未提交，`git diff --stat` = 20 files / +1053 / −234 |
-| 验收对象 | 工作区快照 `git diff \| sha1sum` = `06e6322a`（跑 C/A 组时；此后我仅移除自建的 `.next-qa` 一行，现为 `e69d4057`） |
-| 并发修改 | `src/modules/rca/produce.ts` mtime **22:21:15 落在 A 组窗口内**（22:20:56 启动 / 22:22:24 结束）。tsx 启动即加载模块，A 组结果未受影响；但「验收期间交付物在变」本身不可接受 |
-| 首次 typecheck | 22:19 **红**：`produce.ts(96,7)`/`(128,7)` TS2739 缺 `abstained`/`abstainRule`。22:21 该文件被改（补上两字段），22:26 复跑转绿。**HEAD 版本内部自洽（无 abstained 字段）→ 这次红是工作区「改到一半」的瞬时态，非 HEAD 缺陷** |
-| 我的足迹 | `next build` 重排 `tsconfig.json` include 数组（4 行位移，语义不变，已移除我加的 `.next-qa` 行）；`.next-qa/` 构建产物因安全删除被拦仍残留；`evals/results/test*.{md,json}` 被本次运行覆盖（预期） |
+| 项            | 实测                                                                                                                                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 验收 rev      | `8b919dc`（含 `2077c5e feat(rca): 0.2 研判质量专项`）                                                                                                                                                                                            |
+| 清单哈希      | 跑前 16/16 → 跑后 16/16；A/C 两份报告头均为 `122cb992b271`                                                                                                                                                                                       |
+| 首次 A 组作废 | 首次运行时工作区不干净（25 项未提交改动），窗口内 `src/modules/rca/produce.ts` 被修改（22:21:15），无法证明 22:20:56 启动的进程加载的是哪一版字节；按「验收对象必须是不可变提交」原则作废。经 team-lead 批准在本 commit 上重跑一次，A 组仅此一次 |
+| A/C 同源      | C 组 `14:37:37`、A 组 `14:37:52` 启动，同一 rev、同一清单哈希                                                                                                                                                                                    |
+| 未入库项      | `SPEC-0.2.md` §3.6/§7 变更记录、`EVAL-PROVENANCE.md`、16 例产物、本报告（BL-5、A-9）                                                                                                                                                             |
 
-## 1. 门禁结论表（Spec §1.3 逐项）
+## 1. 门禁结论表（Spec §1.3 逐项，A 组 live 14/2）
 
-| 指标 | 实测（A 组 live，14/2 分母） | 档位 | 判定 |
-| --- | --- | --- | --- |
-| Top1 | 12/14（85.7%） | 目标 ≥11/14 | 达标 |
-| Top3 | 13/14（92.9%） | 目标 ≥13/14 | 达标（压线） |
-| 拒答正确率 | 2/2 | 目标 2/2 | 达标 |
-| 误拒答 | 0/14 | 目标 0/14 | 达标 |
-| 均值（整条 runAnalysis） | 5871 ms | 目标 <6000 | 达标 |
-| P95（整条 runAnalysis） | 10076 ms | 最低可接受 <12000 | 未达目标 |
-| `REASONING` 均值 | 5834 ms | 目标 <6000 | 达标 |
-| `REASONING` P95 | 10017 ms | 最低可接受 <12000 | 未达目标 |
-| 截断率（`finishReason=length`） | 0 / 16 = 0% | 目标 <5% | 达标 |
-| 规则基线回归（C 组） | 13/14 | 目标 ≥12/14 | 达标 |
-
-延迟三态：有 `REASONING` 阶段值，**不是「未判定」**；两项 P95 均落在「最低可接受」档，按 Spec 记未达目标。
+| 指标                            | 实测           | 档位              | 判定                              |
+| ------------------------------- | -------------- | ----------------- | --------------------------------- |
+| Top1                            | 12/14（85.7%） | 目标 ≥11/14       | 达标                              |
+| Top3                            | 13/14（92.9%） | 目标 ≥13/14       | 达标（压线）                      |
+| 拒答正确率                      | 2/2            | 目标 2/2          | 达标                              |
+| 误拒答                          | 0/14           | 目标 0/14         | 达标                              |
+| 均值（整条 runAnalysis）        | 6046 ms        | 最低可接受 <8000  | 未达目标（<6000）                 |
+| P95（整条 runAnalysis）         | 10793 ms       | 最低可接受 <12000 | 未达目标（<9000）                 |
+| `REASONING` 均值                | **6017 ms**    | 最低可接受 <8000  | 未达目标（<6000），**超线 17 ms** |
+| `REASONING` P95                 | 10727 ms       | 最低可接受 <12000 | 未达目标（<9000）                 |
+| 截断率（`finishReason=length`） | 0/16 = 0%      | 目标 <5%          | 达标                              |
+| 规则基线回归（C 组）            | 13/14          | 目标 ≥12/14       | 达标                              |
 
 ## 2. 分步记录
 
-### A. 静态门禁（当前快照，22:27 后复跑）
-- `npx eslint .` → exit 0；`tsc --noEmit` → exit 0（`--incremental false` 亦 0）；`npx vitest run` → **50 文件 / 579 用例全绿**；`next build`（`Checking validity of types` 已执行）→ exit 0。
-- 结论：门禁全绿。**但首次 typecheck 红（见 §0），说明交付物在我手上时仍在被编辑。**
+### A. 静态门禁（`8b919dc`）
 
-### B. 反作弊核查
-| # | 命令 | 结论 |
-| --- | --- | --- |
-| 1 | `git diff 1a09b25..HEAD -- src/modules/rca/fallback.ts` | **通过**。`WEIGHT` 40/20/30/15/20/10、`MIN_CANDIDATE_SCORE` 20、`CLASS_SCORE` 20/16/8/4、`SEVERITY_RANK` 4/3/2/1 与 1a09b25 **逐字相同**；`categoryOf` 仅委托 `categoryOfType`。唯一行为差异 `evidence.slice(0,4)`→`(0,3)`（Spec §3.6 一致性要求） |
-| 2 | `grep -nE "CORE-SW-0\|ACC-SW-\|AGG-SW-\|UPSTREAM@\|HARDWARE@" src/modules/rca/prompt.ts` | **通过**，零命中（exit 1），字典映射无具体设备名/标注元组 |
-| 3 | `sha256sum -c MANIFEST.sha256` ／ `git log --evals/dataset/test/` | 哈希 **16/16 OK**（跑分前后各校一次）；**但时序不过**：test-09~16 首次入库于 `e71d5fe` 22:14，晚于全部实现提交 21:57–22:07 |
-| 4 | `src/lib/env.ts` | **通过**。`RCA_HINT` on(34)、`RCA_SIGNALS` off(36)、`RCA_GATE` on(38)、`RCA_RESCUE` on(40)；GATE=off 注释写明「关前置 R1 + 关 GATE-02 + 关补位，回到 0.1」；`rescue.ts:97` 实际随 GATE 关闭 |
-| 5 | `src/modules/rca/gate.ts:84-99` | **通过**。`isAttributable` 只认 ALERT（需 `isExplainedType`）与 CHANGE（需 `beforeFirstAlert===true`）；TOPOLOGY/METRIC/CASE 走 `return false` |
-| 6 | `grep -rPn "[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]" src evals docs/rca-quality docs/decisions` | **命中 2 处**：`evals/report.ts:26`、`evals/report.test.ts:54` 的 U+2705 / U+274C 状态标记。**预存于 1a09b25**，属报告状态标记非 UI 功能图标 → 见 advisory A-5 |
-| 7 | 测试面 diff | 断言 `expect(` 1059 → 1101（+42，无下降）；无测试文件删除；无新增 `skip`/`only`；`vitest.config.ts` 未改 |
+- `npx eslint .` → exit 0；`npx tsc --noEmit` → exit 0；`next build`（types 校验已执行）→ exit 0。
+- `npm run format:check` → 收口前 6 份文档不合规（含 `PRD`/`ARCH`/`ADR-001` 3 份已进未推送提交），team-lead 与 QA 分别 `prettier --write` 后复跑**全仓绿**（BL-6，过程事实）。
+- `npx vitest run` → **50 文件 / 579 用例**。本 commit 上共跑 4 次全量：**1 红 3 绿**（最近 3 次连续绿），红的是 `split.test.ts > 拆分出的两个事件不会被下一轮聚合合并回去（splitFromId 守卫）`，`AssertionError: expected +0 to be 2`；该文件单独跑 4 次亦 1 红 3 绿。
+- 无跳过：`skipped=0`。5 个 `describe.skipIf(!hasDb)` 块（lifecycle/batch/ingest/metrics/retention）**已注册并执行** —— `vitest.config.ts` 顶部 `process.loadEnvFile('.env')` 注入了 `DATABASE_URL`，「整块未注册」的解释不成立。
+- `581` 已由 team-lead 撤回（无命令证据）；QA 与 backend 实测均为 579/50，本报告按 579 记账，并已核对提交 diff 中 evals 四个测试文件只有新增、无删除（断言 1059→1101）。
+- 非确定性机理：`fileParallelism: false`（文件串行）⇒ 不是并发抢库；同文件单跑也会红 ⇒ 依赖库内残留数据（前序用例或历史运行遗留的 ACTIVE 告警/事件被 `runCorrelation` 卷入合并判定）。
 
-### C. 规则组（跑在 A 组之前）
-`LLM_API_KEY='' npm run eval -- --set=test` → exit 0。报告头：`16 个场景 · 推理模式 fallback`、清单哈希 `122cb992b271`、分母 14/2。
-Top1 **13/14**、Top3 13/14、均值 **27 ms**、P95 61 ms、全通过 **15/16**（唯一失败 test-08，Spec §2.2 明确不做）。`hintOnlyTop1` **11/14**，门禁命中 0 例。已写 `evals/results/test.{md,json}`（覆盖旧 8 例基线，预期）。
+### B. 反作弊核查（1a09b25 → 8b919dc）
 
-### D. 真实模型组（A 组，只跑一次）
-`npm run eval -- --set=test` → exit 0，16 例，`推理模式 live`，哈希 `122cb992b271`，分母 14/2，用时 83.5s。
-Top1 12/14 · Top3 13/14 · 拒答 2/2 · 误拒答 0/14 · 均值 5871 ms · P95 10076 ms · REASONING 5834/10017 ms · 门禁命中（R1）**2 例**（延迟分母 14）· 截断 0 · `schema_retry` 0（JSON 一次通过 100%）· `top1ByOrigin` **LLM 12 / 规则补位 0** · `hintOnlyTop1` **11/14**。
-GATE-02 在 test-02 / test-12 / test-14(INC-002) 各清 1 条（均未清到 0，未触发补位；Top1 未变）。跑完再校 MANIFEST：16/16 OK。
+| #   | 命令                                                                                     | 结论                                                                                                                                                                                                                   |
+| --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `git diff 1a09b25..HEAD -- src/modules/rca/fallback.ts`                                  | **通过**。`WEIGHT` 40/20/30/15/20/10、`MIN_CANDIDATE_SCORE` 20、`CLASS_SCORE` 20/16/8/4、`SEVERITY_RANK` 4/3/2/1 与 1a09b25 逐字相同；`categoryOf` 仅委托 `categoryOfType`；唯一行为差异 `evidence.slice(0,4)`→`(0,3)` |
+| 2   | `grep -nE "CORE-SW-0\|ACC-SW-\|AGG-SW-\|UPSTREAM@\|HARDWARE@" src/modules/rca/prompt.ts` | **通过**，零命中，字典映射不含设备名/标注元组                                                                                                                                                                          |
+| 3   | `sha256sum -c MANIFEST.sha256`；`git log -- evals/dataset/test/`                         | 哈希 16/16；数据集只有 `e71d5fe` 一次扩容（BL-1）                                                                                                                                                                      |
+| 4   | `src/lib/env.ts`                                                                         | **通过**。HINT on(34)/SIGNALS off(36)/GATE on(38)/RESCUE on(40)；GATE=off 注释「关前置 R1 + 关 GATE-02 + 关补位，回到 0.1」；`rescue.ts:97` 实际随 GATE 关闭                                                           |
+| 5   | `src/modules/rca/gate.ts:84-99`                                                          | **通过**。ALERT 需 `isExplainedType`、CHANGE 需 `beforeFirstAlert===true`；TOPOLOGY/METRIC/CASE 一律 `return false`                                                                                                    |
+| 6   | `grep -rPn "[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]" src evals docs/…`                    | **命中 2 处**：`evals/report.ts:26`、`report.test.ts:54` 的 U+2705/U+274C，预存于 1a09b25，属报告状态标记非 UI 图标 → A-5                                                                                              |
+| 7   | 测试面                                                                                   | 断言 1059→1101（+42）；无测试文件删除、无新增 `skip`/`only`；`vitest.config.ts` 未改                                                                                                                                   |
+
+### C. 规则组（`LLM_API_KEY='' npm run eval -- --set=test`）
+
+exit 0。`16 个场景 · 推理模式 fallback`，哈希 `122cb992b271`。Top1 **13/14**、Top3 13/14、均值 **18 ms**、P95 50 ms、全通过 15/16（唯一失败 test-08，Spec §2.2 明确不做）、`hintOnlyTop1` 11/14、`abstainedCases` **0**。
+`abstainedCases: 0` 是口径差异不是缺陷：`produce.ts:78-80` 在 `mode==='fallback'` 时先于 R1 直接返回规则结果，规则路径根本不进闸门。
+
+### D. 真实模型组（`npm run eval -- --set=test`，本专项唯一有效一次）
+
+exit 0，16 例，`推理模式 live`，哈希 `122cb992b271`，分母 14/2，用时 85.6s。
+Top1 12/14 · Top3 13/14 · 证据相关率 99.2% · 拒答 2/2 · 误拒答 0/14 · 均值 6046 ms · P95 10793 ms · REASONING 6017/10727 ms · 门禁命中 2 例（延迟分母 14）· 截断 0 · `schema_retry` 0 · token 80633（5760/事件）· 全通过 15/16。
+`top1ByOrigin` **LLM 12 / 规则补位 0** → 提升不含补位成分。`hintOnlyTop1` **11/14**。GATE-02 在 4 个事件上各清 1 条（`gateCleared:1`×4），均未清到 0、未触发补位（`rescued:false`×18）、Top1 未变。
 
 ### E. 逐场景硬断言（读 `evals/results/test-live.json`）
-| 用例 | 断言 | 实测 | 结论 |
-| --- | --- | --- | --- |
-| test-07 | `hypotheses.length === 0` | 0，`abstained=true`，REASONING 0 ms | 通过 |
-| test-16 | `hypotheses.length === 0` | 0，`abstained=true`，REASONING 1 ms | 通过 |
-| test-09 | `> 0` | 3（Top1 命中 LINK/AGG-SW-01） | 通过（「不得引用该变更」见 A-2，**未验证**） |
-| test-10 | `> 0` | 3 | 通过 |
-| test-11 | `> 0` 且每条 `confidence ≤ 0.55` | 3；`topologyLevel=MISSING` → `analyze.ts:202` `capConfidence` + `CONFIDENCE_CAP.MISSING=0.55` 结构性封顶 | 通过（代码级证据，产物未落逐条 confidence） |
 
-`missingInfo` 非空由 `analyze.ts:179` 注入 `ABSTAIN_MISSING_INFO`（`[TYPE_UNKNOWN]` 三段式）保证，C/A 两组的 test-07/16 均走该路径。
+| 用例    | 断言                             | 实测                                                                                     | 结论                   |
+| ------- | -------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------- |
+| test-07 | `hypotheses.length === 0`        | 0，`abstained=true`，REASONING 0 ms                                                      | 通过                   |
+| test-16 | `hypotheses.length === 0`        | 0，`abstained=true`，REASONING 0 ms                                                      | 通过                   |
+| test-09 | `> 0`                            | 2，Top1 命中 LINK/AGG-SW-01                                                              | 通过（引用限制见 A-3） |
+| test-10 | `> 0`                            | 2                                                                                        | 通过                   |
+| test-11 | `> 0` 且每条 `confidence ≤ 0.55` | 3；`topologyLevel=MISSING` → `analyze.ts:202` + `CONFIDENCE_CAP.MISSING=0.55` 结构性封顶 | 通过（代码级证据）     |
 
-### F. A|C 分层（按 `scores[].id` 对齐，14 例，报计数）
-| 分层 | 计数 | 用例 |
-| --- | --- | --- |
-| A、C 都答对 | **12** | test-02~06、09~15 |
-| A 答对、C 答错 | **0** | — |
-| A 答错、C 答对 | **1** | test-01 |
-| 都答错 | **1** | test-08 |
+拒答路径 `missingInfo` 由 `analyze.ts:179` 注入 `[TYPE_UNKNOWN]` 三段式，结构上非空。延迟三态（G）：有阶段值，均值 6017 ms、P95 10727 ms 均未达 Spec 目标（<6000 / <9000），落最低可接受档（有阶段值，**不是「未判定」**；均值从首次作废跑的 5834 ms 到 6017 ms 跨在目标线两侧，目标档不稳定），无 `STAGE_METRICS_MISSING`。
 
-`hintOnlyTop1` 11/14（A、C 两组同值）；`top1ByOrigin` = LLM 12 / RULE_FALLBACK 0。
+### F. A|C 分层（按 `scores[].id` 对齐 14 例，报计数）
 
-### G. 延迟三态
-有 `REASONING` 阶段值 → 已判定：均值 5834 ms 达标（<6000）；P95 10017 ms 未达目标（<9000），落最低可接受档（<12000）。未出现 `STAGE_METRICS_MISSING`。
+| 分层           | 计数   | 用例              |
+| -------------- | ------ | ----------------- |
+| A、C 都答对    | **12** | test-02~06、09~15 |
+| A 答对、C 答错 | **0**  | —                 |
+| A 答错、C 答对 | **1**  | test-01           |
+| 都答错         | **1**  | test-08           |
 
-## 3. Blocking（不归零不上线）
+`hintOnlyTop1` 11/14（A、C 同值）；`top1ByOrigin` = LLM 12 / RULE_FALLBACK 0。
 
-| ID | 违反 | 证据 | 期望 |
-| --- | --- | --- | --- |
-| BL-1 | Spec §4.2「新增 8 例必须在任何调参开始前写入并冻结」 | `git log`：test-09~16 首现于 `e71d5fe` 22:14，晚于 `f38d355`~`93101fd`（21:57–22:07）全部实现提交。版本史无法证明冻结先于调参 | 提供冻结早于调参的证据（独立冻结 commit / 原始落盘时间），或按 Spec §3.4 记 CHANGELOG 重跑双基线 |
-| BL-2 | Spec §3.6「`evidence.max` 8→3」（锁定项） | `src/modules/rca/schema.ts:46` 仍为 `.max(8)`；`:42-44` 注释为**有意保留**（「prompt 管体量、schema 只管底线」） | 二选一：改回 3；或由决策方正式接受偏差并改 Spec 变更记录。**有意偏差 ≠ 合规**，不能静默通过 |
-| BL-3 | 交付物身份 | 0.2 主体实现未入库（20 文件 +1053/−234 全在工作区），且验收期间 `produce.ts` 于 22:21:15 被并发修改 | 收工后提交为单一 commit，用该 rev 复跑 lint/typecheck/test（A 组不必重跑，本次数字对应 06e6322a 快照，已记录） |
+## 3. Blocking
 
-## 4. Advisory（不阻断但必须登记）
+| ID   | 违反                                               | 证据                                                                                                                                                                                                                                                                                                                                                                        | 状态                                                                                                                                                                                                                                               |
+| ---- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BL-6 | **推上去必在 `format:check` 失败，且 CI 从未运行** | `git status -sb` = `ahead 9`，9 个提交（含 `8b919dc`）均未推送 ⇒ **CI 从未在本 commit 上跑过**；按 `.github/workflows/ci.yml:34` 的顺序（`db:seed → format:check → lint → typecheck → test → build`），一旦推送会在第一步失败、后续四项不执行。收口前 6 份文档不合规，其中 `PRD`/`ARCH`/`ADR-001` 已进未推送提交；对 `8b919dc` 版本逐份 `prettier --check` 亦全部 HEAD-FAIL | **工作区已修**：team-lead 刷 5 份、本报告自刷，复跑 `format:check` 全仓绿。**待随收口提交入库后关闭**。定性：`8b919dc` 上「CI 绿」不成立是**未验证**，不是已失败                                                                                   |
+| BL-5 | 关闭依据不在验收 commit 内                         | `git status --short -- src evals/dataset docs` = `M SPEC-0.2.md`、`M QA-REPORT-0.2.md`、`?? EVAL-PROVENANCE.md`（`src/`、`evals/dataset/` 干净）                                                                                                                                                                                                                            | **未关闭**。关闭方式：纳入收口提交（SPEC 变更记录 + 溯源文件 + 16 例产物 + 本报告）                                                                                                                                                                |
+| BL-4 | 测试不确定性（门禁不可重复）                       | 见 A 节：全量 4 次 1 红 3 绿、单文件 4 次 1 红 3 绿                                                                                                                                                                                                                                                                                                                         | **未关闭**。修法（team-lead 裁决）：整份 `split.test.ts` 迁到专属租户 `split-test`，用已有 `runCorrelation(now, tenantId)` / `splitIncident({tenantId})`，零生产改动。验收口径：单文件连续 10 次 10/10 绿 + 全量 2 次 579 绿 + `tsc`/`eslint` 干净 |
+| BL-1 | Spec §4.2 冻结时序                                 | test-09~16 首现 `e71d5fe` 22:14:25；数据集仅此一次扩容；提交版结果仍是 8 例（`test.md` = 8 例/11-20，`test-live.md` = 8 例/11-26T10:06），可反证首次 16 例运行（22:20）晚于冻结                                                                                                                                                                                             | **内容成立**，随 BL-5 入库                                                                                                                                                                                                                         |
+| BL-2 | Spec §3.6 锁定项                                   | `schema.ts:46` 仍 `evidence.max(8)`；偏差理由（收紧到 3 会结构性拒绝 test-08 类多证据假设）成立，§3.6/§7 已有正式变更记录                                                                                                                                                                                                                                                   | **内容成立**，随 BL-5 入库                                                                                                                                                                                                                         |
+| BL-3 | 交付物未入库                                       | 20 文件工作区改动                                                                                                                                                                                                                                                                                                                                                           | **关闭**：`8b919dc`                                                                                                                                                                                                                                |
 
-- **A-1 数字不可作宣传**：`hintOnlyTop1` 11/14 ≈ A 组 12/14，且 **A 独对 0 例、C 独对 1 例**（test-01 规则对、模型错）。test 集同样已饱和，Top1 85.7% 不能归因为模型能力；对外只能讲「拒答门禁与输出收敛达标」，不能讲「模型变准了」。
-- **A-2 AC-4 未验证**：test-09「不得引用晚于首告警的变更」无任何自动断言 —— `test-09.json` 的 `expect` 只有 `incidents/rootCause/rootAlert`，`evals/metrics.ts` 无该检查，评测末尾 `run.ts:390` 清场导致产物不可复核。按「没测量 ≠ 达标」，此项记未判定。
-- **A-3 延迟未达目标**：REASONING P95 10017 ms 与整条 P95 10076 ms 均未达 Spec 目标，只因 <12000 才落最低可接受。P95 由 test-03/test-14（双事件串行 10s）拉高，单事件其实约 5–6s；口径仍按 Spec 记未达标。
-- **A-4 token 反向恶化**：80750 / 14 = **5768 token/事件**，PRD §1 目标 <4000、不可接受线 ≥5000（基线 5446）。输出收敛（`max_tokens=2400`、证据裁剪）没压住 token，反而略升，疑与提示词变长（告警行尾增 `归因:` 标签）有关。Spec §1.3 未设 token 门禁，故不阻断，但「延迟只允许一处来源=裁剪输出体量」的收益未兑现。
-- **A-5 emoji 命中需裁决**：`evals/report.ts:26` 的 U+2705/U+274C 为预存报告状态标记，非 UI 功能图标；按团队规则字面「命中即 fail」，按规则意图（UI 功能图标）不成立。建议换成 `PASS/FAIL` 文本，从根上消除歧义。
-- **A-6 模型自行拒答路径被堵**：`schema.ts:55` `hypotheses.min(1)` 未改，模型无法返回空假设（PRD §2.1「两条路径都要能拒答」）。Spec §3.6 未要求改，按 Spec 判不阻断，但 PRD 该句应删或标为不做。
-- **A-7 GATE-02 观察项**：3 个正例各被清 1 条假设（未影响 Top1）。门禁未过度误杀的证据是「kept 从未被清空到 0」，建议把这两条计数（`gateCleared` / `rescued`）纳入长期监控。
-- **A-8 我的足迹**：见 §0 最后一行。
+BL-2 留痕：Spec 是 QA 提出偏差后追加的（非事前锁定），属「决策方正式接受偏差」的合规路径；「先实现后补授权」应记 0.3 过程改进。
+
+## 4. Advisory
+
+- **A-1 不得跨集比较**：旧 8 例 57.1%（4/7）与新 16 例 85.7%（12/14）不是同一份卷子。有效对比只有同集三行：A 12/14 · C 13/14 · hintOnly 11/14。
+- **A-2 模型相对规则未观测到增益（已复核，无反例）**：A 独对 0 例；规则组在模型答错的每一例上都答对（test-01）；test-08 两路径同错。模型真正挣到的分 = 0。
+- **A-3 AC-4 评测层零断言（0.3 待办）**：产品路径由 `gate.ts` 的 `isAttributable` 堵住（引用事后变更的假设会被整条清空），但 `test-09.json` 无该标注、`metrics.ts` 无该检查、`run.ts` 末尾清场 —— 「相信它成立，不是验证了它成立」。0.3 用 `forbid: [{kind:'CHANGE', ref}]` + `scoreCase` 断言；0.2 内不动评测尺子。
+- **A-4 token 反向恶化**：80633/14 = 5760 token/事件，超 PRD 不可接受线 5000（基线 5446）。Spec §1.3 无 token 门禁故不阻断，但「延迟只靠裁剪输出体量」的收益未兑现。
+- **A-5 emoji（0.3 待办）**：`evals/report.ts:26` 的 U+2705/U+274C 为预存报告状态标记，按规则字面命中、按意图（UI 功能图标）不成立。team-lead 裁决 0.2 保留（改渲染器会让已入库产物与代码漂移），0.3 改 `PASS/FAIL` 文本。另：`schema.ts:55` 的 `hypotheses.min(1)` 本期不放开，PRD §2.1「模型可自行返回空」本期不成立，已登记待办（原 A-6）。
+- **A-7 GATE-02 观察项**：本轮 4 个事件各清 1 条（Top1 未变、kept 从未清空）。「未过度误杀」的证据就是 kept 从未为 0，建议把 `gateCleared`/`rescued` 纳入长期监控。
+- **A-8 我的足迹**：`evals/results/test*.{md,json}` 被本轮覆盖（预期）；`tsconfig.json` 位移已由后端还原；本报告已 `prettier --write` 自清；`.next-qa/`（185M/325 文件）因 safe-delete 阈值被拦未删净，需用户在可执行终端 `rm -rf .next-qa`。
+- **A-9 16 例基线未入库**：`8b919dc` 里仍是 8 例旧基线，冻结链要闭环必须随收口提交入库。
+- **A-10 标注独立性**：8 例由实现方自写自标（`EVAL-PROVENANCE.md` §3 已自认），标注取自 `affinity.ts` 族表而非系统输出，不构成「按答案造题」，但结论强度受限；0.3 应双人独立标注 + 一致性校验。
 
 ## 5. 总体判定
 
-**fail —— 当前不可交付。** 判据层面好消息：Spec §1.3 十项门禁**全部不触碰不可接受线**，拒答（2/2）、误拒答（0/14）、Top1/Top3、截断率、规则回归均达标，四项核心 EARS（AC-1/2/4/5 对应的 test-07/16/09/10/11）行为正确，反作弊六项无一条因刷分而改规则或改测试。
+**fail（待收口闭环）—— 质量数据正面，三条流程/门禁阻断未清零。** Spec §1.3 十项**无一触碰不可接受线**：拒答 2/2、误拒答 0/14、Top1 12/14、Top3 13/14、截断率 0%、规则回归 13/14；四项核心 EARS（test-07/16/09/10/11）行为全部正确；反作弊七项无一条因刷分改规则或改测试；`top1ByOrigin` 全为 LLM，提升不含补位成分。BL-2/BL-3 已关闭，BL-1/BL-2 内容成立待入库。
 
-阻断原因不在模型质量，在三处可修的地方：测试集冻结时序不可证（BL-1）、`evidence.max` 未按锁定 Spec 收到 3（BL-2）、交付物尚未成为一个 commit 且验收期间仍在被改（BL-3）。BL-2/BL-3 各半天内可闭环，BL-1 需要补证据或按 Spec 重跑双基线；三者归零后只需复跑 lint/typecheck/test，A 组不必重跑。
+未清零项全部落在非模型面：**BL-6**（推送后会在 `format:check` 第一步失败 —— 四份 0.2 文档未格式化；CI 从未运行，属未验证而非已失败）、**BL-5**（关闭依据只在工作区）、**BL-4**（`split.test.ts` 存量非确定性）。
+
+转 pass 的条件（我已把验收口径前置写清，便于复核）：BL-4 按租户隔离修完后单文件连续 10 次 10/10、全量 2 次均 579 绿；BL-6 用 `prettier --write docs/` 清理；BL-5 四类内容入库。三项完成后 `tsc`/`eslint`/`format:check`/`vitest` 复跑通过即可判 pass —— **A 组不必重跑**（数字已绑定 `8b919dc` + 清单哈希 `122cb992b271`）。

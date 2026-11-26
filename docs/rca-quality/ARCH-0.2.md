@@ -7,16 +7,16 @@
 
 分母：Top1/Top3/误拒答 = 有标注根因的 14 例；拒答正确率 = `rootCause=null` 的 2 例。
 
-| 指标 | 规则基线(旧 8) | 模型现状(旧 8) | 0.2 目标(新 16) | 最低可接受 / 不可接受 |
-|---|---|---|---|---|
-| Top1 | 85.7% | 57.1% | ≥ 11/14 | 10/14 / ≤ 9/14 |
-| Top3 | 85.7% | 71.4% | ≥ 13/14 | 12/14 / ≤ 11/14 |
-| 拒答正确率 | 1/1 | 0/1 | 2/2 | — / ≥1 例漏答 |
-| 误拒答率 | 0/7 | 0/7 | 0/14 | — / ≥2/14 |
-| REASONING 阶段 均值/P95（整条 runAnalysis 只报告、不设门禁，含 DB 与落库） | 待基线 | 待基线：8969/14991ms 是整条，不能当阶段值 | < 8000 / < 12000ms | — / ≥8000 / ≥15000ms |
-| 单事件 token | 0 | ≈5446 | < 4000 | — / ≥5000 |
-| JSON 一次通过率 | — | ≈89% | ≥ 95% | — / < 85% |
-| 截断率（`finishReason=length`） | — | 未采集 | < 5% | — / ≥10%（<2% 才允许下调 max_tokens 到 1800 复测） |
+| 指标                                                                       | 规则基线(旧 8) | 模型现状(旧 8)                            | 0.2 目标(新 16)    | 最低可接受 / 不可接受                              |
+| -------------------------------------------------------------------------- | -------------- | ----------------------------------------- | ------------------ | -------------------------------------------------- |
+| Top1                                                                       | 85.7%          | 57.1%                                     | ≥ 11/14            | 10/14 / ≤ 9/14                                     |
+| Top3                                                                       | 85.7%          | 71.4%                                     | ≥ 13/14            | 12/14 / ≤ 11/14                                    |
+| 拒答正确率                                                                 | 1/1            | 0/1                                       | 2/2                | — / ≥1 例漏答                                      |
+| 误拒答率                                                                   | 0/7            | 0/7                                       | 0/14               | — / ≥2/14                                          |
+| REASONING 阶段 均值/P95（整条 runAnalysis 只报告、不设门禁，含 DB 与落库） | 待基线         | 待基线：8969/14991ms 是整条，不能当阶段值 | < 8000 / < 12000ms | — / ≥8000 / ≥15000ms                               |
+| 单事件 token                                                               | 0              | ≈5446                                     | < 4000             | — / ≥5000                                          |
+| JSON 一次通过率                                                            | —              | ≈89%                                      | ≥ 95%              | — / < 85%                                          |
+| 截断率（`finishReason=length`）                                            | —              | 未采集                                    | < 5%               | — / ≥10%（<2% 才允许下调 max_tokens 到 1800 复测） |
 
 延迟口径：Spec 对整条 `runAnalysis` 采用三档（目标 <6000 / 最低可接受 <8000 / 不可接受 ≥8000）；本节 8000/12000 是 `REASONING` 阶段门禁，两者不冲突——整条含取数与落库，只报告；阶段值才是模型性能的判据。
 
@@ -51,6 +51,7 @@ buildIncidentContext ─► ContextBundle
 ## 4. Q2 规则先验：只给特征，不给结论；补位要标来源
 
 **决策：引入"特征级先验"但首版默认关闭（`RCA_SIGNALS=off`），只上归因字典（A 组）。** 一次上两个变量，分数涨了也无法归因；B 组作为对照实验在 dev 单独跑一次，按 20 点阈值决定是否默认开。
+
 - 拒绝：把 `ruleFallback(ctx)` 的 Top1（含分数与排序）拼进 prompt。那是把答案递给模型——test-01 规则本就答对，提升会全部记在 LLM 账上。
 - 采纳（开关打开时）：`[设备信号]` 段只陈述规则排序时用的**同一组事实**，不给 score、不给 rank（如 `- CORE-SW-01（核心层）| 事件内告警 5 条，最高 P1 | 事件前变更 0 | 直连受影响设备 2 台 | 到影响面 0 跳`）。排序与归因仍是模型的活。拼装：`renderPrompt` 内、`[告警]` 之后，数据由 `buildDeviceSignals(ctx)` 产出。
 
@@ -66,13 +67,16 @@ PRD §2.1 要求"调用模型之前"拒答且不花 token；但只看上下文�
 ```ts
 // src/modules/rca/gate.ts
 export function gateContext(ctx: GateContext): { hit: boolean; rule: 'R1'; missingInfo: string[] };
-export function gateHypotheses(ctx: GateContext, hypotheses: readonly HypothesisDraft[]): GateDecision;
+export function gateHypotheses(
+  ctx: GateContext,
+  hypotheses: readonly HypothesisDraft[],
+): GateDecision;
 ```
 
-| 编号 | 判定式 | 调用点 | 动作 |
-|---|---|---|---|
-| R1（前置） | `alerts.filter(a => !a.suppressed)` 非空 且 无一条 `isExplainedType` 且 无 `beforeFirstAlert` 变更 | `produceResult` 入口前 | 直接 `ruleFallback(ctx)`（本就返回空）：`source` 仍为 `RULE_FALLBACK`、`degradedReason='闸门命中 R1：全部告警类型未登记且无事件前变更'`、`tokensUsed=null` |
-| GATE-02（后置） | 某条假设的证据里没有一条「可归因证据」 | `verifyHypotheses` 之后 | 清空该条（逐条，不连坐） |
+| 编号            | 判定式                                                                                             | 调用点                  | 动作                                                                                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1（前置）      | `alerts.filter(a => !a.suppressed)` 非空 且 无一条 `isExplainedType` 且 无 `beforeFirstAlert` 变更 | `produceResult` 入口前  | 直接 `ruleFallback(ctx)`（本就返回空）：`source` 仍为 `RULE_FALLBACK`、`degradedReason='闸门命中 R1：全部告警类型未登记且无事件前变更'`、`tokensUsed=null` |
+| GATE-02（后置） | 某条假设的证据里没有一条「可归因证据」                                                             | `verifyHypotheses` 之后 | 清空该条（逐条，不连坐）                                                                                                                                   |
 
 「可归因证据」只认**已登记类型的 ALERT** 与**早于首告警的 CHANGE**。TOPOLOGY 只说明两台设备相邻、不说明"为什么坏"；CASE 是类比不是本次证据（留着会让模型引用真实案例救活无依据假设，正好绕过 R1 口径）；METRIC 可作辅助，单独存在不足以支撑根因。
 
@@ -89,46 +93,47 @@ export function gateHypotheses(ctx: GateContext, hypotheses: readonly Hypothesis
 
 前置：先用已有 `progress.stages`（progress.ts:35-45）把 `CONTEXT/REASONING/VERIFY/PERSIST` 拆开。evals/run.ts:216-219 的 `durationMs` 覆盖整条 `runAnalysis`，含取数与落库；不拆就不知道 8969ms 里有多少是真解码。下表收益均为**估算，未经实测**。
 
-| # | 手段 | 改动点 | 预估收益 | 成本 |
-|---|---|---|---|---|
-| 1 | 输出结构收紧：verifySteps 1~2 条、actions ≤1、evidence ≤3、各 desc ≤80 字（= PRD AC-6） | prompt 骨架 + schema 上限 | 均值 -2500~3500ms（主杠杆） | 低 |
-| 2 | 上下文瘦身：`[历史案例]` 只留 title+tags；指标趋势只留前 3 条带 trend 的 | prompt.ts:106-118、131-139 | token -1200~1500（token<4000 的主杠杆） | 低 |
-| 3 | `max_tokens=2400` + 采集 `usage.completion_tokens` 与 `finishReason` | client.ts（当前请求体未传 max_tokens，响应只取 total） | 压尾，消除 4k 级失控输出；截断率进验收 | 极低 |
-| 4 | 修复重试止损：`finishReason==='length'`、首调 >6s、超时/网络错误 → 不重试直接降级 | produce.ts | P95 -3000~6000ms | 低 |
-| 5 | 超时拆分：首调 12s / 修复 8s（现单点 30s，最坏 60s） | client.ts + produce.ts | 最坏用时 60s → 20s | 低 |
-| 6 | 同事件 in-flight 去重 | analyze.ts 入口 | 不改单次延迟，消除重复点击的二次等待 | 极低 |
+| #   | 手段                                                                                    | 改动点                                                 | 预估收益                                | 成本 |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------- | ---- |
+| 1   | 输出结构收紧：verifySteps 1~2 条、actions ≤1、evidence ≤3、各 desc ≤80 字（= PRD AC-6） | prompt 骨架 + schema 上限                              | 均值 -2500~3500ms（主杠杆）             | 低   |
+| 2   | 上下文瘦身：`[历史案例]` 只留 title+tags；指标趋势只留前 3 条带 trend 的                | prompt.ts:106-118、131-139                             | token -1200~1500（token<4000 的主杠杆） | 低   |
+| 3   | `max_tokens=2400` + 采集 `usage.completion_tokens` 与 `finishReason`                    | client.ts（当前请求体未传 max_tokens，响应只取 total） | 压尾，消除 4k 级失控输出；截断率进验收  | 极低 |
+| 4   | 修复重试止损：`finishReason==='length'`、首调 >6s、超时/网络错误 → 不重试直接降级       | produce.ts                                             | P95 -3000~6000ms                        | 低   |
+| 5   | 超时拆分：首调 12s / 修复 8s（现单点 30s，最坏 60s）                                    | client.ts + produce.ts                                 | 最坏用时 60s → 20s                      | 低   |
+| 6   | 同事件 in-flight 去重                                                                   | analyze.ts 入口                                        | 不改单次延迟，消除重复点击的二次等待    | 极低 |
 
 口径澄清：PRD §1 规定"延迟只允许一处来源 = 裁剪输出体量，禁止砍候选数量或砍证据校验"。第 1 条是它的执行；第 2 条是 **token<4000** 的执行（单事件 ≈5446 里输入才是大头），不计入延迟收益；第 3~5 条是"对已有失败止损"，不降低一次通过率、不砍候选、不砍校验。
 `max_tokens=2400` 依据：按 schema 上限逐字段估，单条假设最坏 ≈1100 token（cause 120 + evidence 3×80 + verifySteps 3×160 + actions 2×120 + 结构字段），3 条 ≈3300；现实输出 1500~2200。**不能按 900 取**——`49017/8≈6127` 是输入+输出的总量，不是输出量，900 会稳定截断并触发第 4 条止损，反而把 `source` 打回 RULE_FALLBACK。验收看**截断率 < 5%**（≥10% 不可接受），截断率 < 2% 才允许下调到 1800 复测。
 **能砍/不能砍**：可砍——历史案例正文、指标趋势明细（cases 仅在 ROOT/PARENT 时加 10 分）；不能砍——告警清单（evidence.ref 唯一来源）、拓扑邻接与"晚于首个告警"标注（L2 硬条件与因果方向）、拓扑完整度提示（capConfidence 口径）。
 风险提示：延迟门禁按 **REASONING 阶段** < 8000ms / P95 < 12000ms 判，整条 `runAnalysis` 只报告。阶段埋点目前不存在，属本期实现范围；埋点未上线时这两行降级为报告值并标 `STAGE_METRICS_MISSING`，不得用整条 8969/14991ms 当阶段基线。
+
 ## 7. 改动清单
 
-| 文件 | 函数 / 位置 | 性质 | 行数 |
-|---|---|---|---|
-| `src/modules/rca/explainability.ts` | 新增 `isExplainedType`/`categoryOfType`/`buildDeviceSignals`/`attributionTag` | 新增纯模块，无 IO | 新增 ≈75 |
-| `src/modules/rca/gate.ts` | 新增 `gateContext` + `gateHypotheses`（共用内部判据） | 新增纯函数 | 新增 ≈75 |
-| `src/modules/rca/produce.ts` | `produceResult`/`parseResult`/`degradedOutcome` 迁入 + 止损 + max_tokens | 迁移 + 改 | 迁出 ≈65 |
-| `src/modules/rca/rescue.ts` | 新增 `fillFromRulesIfEmpty`（去重键 + origin） | 新增 | 新增 ≈50 |
-| `src/modules/rca/fallback.ts` | 删本地 `isExplained`；`categoryOf` 委托 `categoryOfType` | 重构，行为不变 | -8/+6 |
-| `src/modules/rca/prompt.ts` | 字典标签 + `[设备信号]` + SYSTEM_PROMPT 第 6 条 + `PROMPT_VERSION`→rca-1.1 | 改 | 150→≈165 |
-| `src/modules/rca/analyze.ts` | 插 `gateContext`（produce 前）与 `gateHypotheses`（verify 后）；missingInfo 分支；调 rescue；meta 增 gate/origin/hintVersion | 改 | 323→≈255 |
-| `src/modules/rca/schema.ts` | meta 增可选 `gate`/`hintVersion`/`hypothesesOrigin`；`HypothesisSchema` 按 AC-6 收紧上限（类型不变） | 改（JSON 列，无迁移） | +12 |
-| `src/lib/llm/client.ts` / `env.ts` / `.env.example` | `maxTokens?`/`timeoutMs?`/`finishReason`/`completionTokens`；`RCA_HINT`（默认 on）、`RCA_GATE`（on）、`RCA_RULE_FILL`（on）、`RCA_SIGNALS`（**默认 off**） | 改 + 新增开关 | +26 |
-| `evals/metrics.ts` | `ObservedHypothesis.origin?`；`Aggregate` 增 `top1ByOrigin`/`hintOnlyTop1` | 改度量，不改判定 | +20 |
-| 测试 | `explainability.test.ts`/`gate.test.ts`/`rescue.test.ts`/`prompt.test.ts` | 新增 | ≈4 文件 |
+| 文件                                                | 函数 / 位置                                                                                                                                                | 性质                  | 行数     |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------- |
+| `src/modules/rca/explainability.ts`                 | 新增 `isExplainedType`/`categoryOfType`/`buildDeviceSignals`/`attributionTag`                                                                              | 新增纯模块，无 IO     | 新增 ≈75 |
+| `src/modules/rca/gate.ts`                           | 新增 `gateContext` + `gateHypotheses`（共用内部判据）                                                                                                      | 新增纯函数            | 新增 ≈75 |
+| `src/modules/rca/produce.ts`                        | `produceResult`/`parseResult`/`degradedOutcome` 迁入 + 止损 + max_tokens                                                                                   | 迁移 + 改             | 迁出 ≈65 |
+| `src/modules/rca/rescue.ts`                         | 新增 `fillFromRulesIfEmpty`（去重键 + origin）                                                                                                             | 新增                  | 新增 ≈50 |
+| `src/modules/rca/fallback.ts`                       | 删本地 `isExplained`；`categoryOf` 委托 `categoryOfType`                                                                                                   | 重构，行为不变        | -8/+6    |
+| `src/modules/rca/prompt.ts`                         | 字典标签 + `[设备信号]` + SYSTEM_PROMPT 第 6 条 + `PROMPT_VERSION`→rca-1.1                                                                                 | 改                    | 150→≈165 |
+| `src/modules/rca/analyze.ts`                        | 插 `gateContext`（produce 前）与 `gateHypotheses`（verify 后）；missingInfo 分支；调 rescue；meta 增 gate/origin/hintVersion                               | 改                    | 323→≈255 |
+| `src/modules/rca/schema.ts`                         | meta 增可选 `gate`/`hintVersion`/`hypothesesOrigin`；`HypothesisSchema` 按 AC-6 收紧上限（类型不变）                                                       | 改（JSON 列，无迁移） | +12      |
+| `src/lib/llm/client.ts` / `env.ts` / `.env.example` | `maxTokens?`/`timeoutMs?`/`finishReason`/`completionTokens`；`RCA_HINT`（默认 on）、`RCA_GATE`（on）、`RCA_RULE_FILL`（on）、`RCA_SIGNALS`（**默认 off**） | 改 + 新增开关         | +26      |
+| `evals/metrics.ts`                                  | `ObservedHypothesis.origin?`；`Aggregate` 增 `top1ByOrigin`/`hintOnlyTop1`                                                                                 | 改度量，不改判定      | +20      |
+| 测试                                                | `explainability.test.ts`/`gate.test.ts`/`rescue.test.ts`/`prompt.test.ts`                                                                                  | 新增                  | ≈4 文件  |
 
 不属于本模块、但 PRD 要求必须排期：① `evals/run.ts` 打印清单哈希、分母校验、不一致非 0 退出，并透出 `origin`/阶段耗时（PRD AC-8）；② 前端研判空态区分"系统拒答"与"研判失败"（PRD §2.3，唯一允许的 UI 改动）；③ test 8→16 扩容与 `MANIFEST.sha256` 冻结、dev-18 对照实验（PRD §3，属 PM/QA）。约束核对：无新增依赖；无 Prisma schema 变更；新文件均 <300 行；analyze.ts 323→≈255。**遗留债**：fallback.ts 现 357 行已超 300，本期只净减 2 行（拆它要动评分权重附近代码，风险大于收益，列入 0.3）。
 
 ## 8. 风险与缓解
 
-| 风险 | 概率 | 影响 | 缓解 / 保底 |
-|---|---|---|---|
-| 字典注入把 category 拉偏 | 中 | Top1 反向下降 | dev-18 对照实验 + dev-02/dev-11 回归 + 冲突条款；`RCA_HINT=off` 回滚 |
-| 设备信号表等价于泄露答案 | 中 | 分数虚高、线上回落 | 首版 `RCA_SIGNALS=off` 不默认开；`B-A ≥ 20 点`判泄露；`top1ByOrigin` 披露 |
-| 门禁误杀 | 中 | AC-20 反向失败，误拒答率超标 | 判据只留 `isExplainedType`；dev-04 类与"仅变更"类写单测；`RCA_GATE=off` |
-| AC-6 收紧后一次通过率跌破 95% / 截断率超 5% | 中 | 触发 PRD 不可接受值 | prompt 骨架与 schema 同批改，"格式不合格"占比 >5% 立即放宽；截断率 ≥10% 先查 max_tokens 与骨架，不得靠加修复重试 |
-| 拆 produce.ts 引入回归 | 低 | 研判主链路 | 纯迁移 + analyze.test.ts 全绿方算完成；单独 commit |
+| 风险                                        | 概率 | 影响                         | 缓解 / 保底                                                                                                      |
+| ------------------------------------------- | ---- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 字典注入把 category 拉偏                    | 中   | Top1 反向下降                | dev-18 对照实验 + dev-02/dev-11 回归 + 冲突条款；`RCA_HINT=off` 回滚                                             |
+| 设备信号表等价于泄露答案                    | 中   | 分数虚高、线上回落           | 首版 `RCA_SIGNALS=off` 不默认开；`B-A ≥ 20 点`判泄露；`top1ByOrigin` 披露                                        |
+| 门禁误杀                                    | 中   | AC-20 反向失败，误拒答率超标 | 判据只留 `isExplainedType`；dev-04 类与"仅变更"类写单测；`RCA_GATE=off`                                          |
+| AC-6 收紧后一次通过率跌破 95% / 截断率超 5% | 中   | 触发 PRD 不可接受值          | prompt 骨架与 schema 同批改，"格式不合格"占比 >5% 立即放宽；截断率 ≥10% 先查 max_tokens 与骨架，不得靠加修复重试 |
+| 拆 produce.ts 引入回归                      | 低   | 研判主链路                   | 纯迁移 + analyze.test.ts 全绿方算完成；单独 commit                                                               |
 
 ## 9. 回滚方式
 
@@ -136,15 +141,15 @@ export function gateHypotheses(ctx: GateContext, hypotheses: readonly Hypothesis
 
 ## 10. PRD 条目 → 架构手段 → 追溯
 
-| PRD 条目 | 架构手段 | 追溯的失败场景 / 证据 |
-|---|---|---|
-| §1 Top1 ≥11/14 | Q1 字典注入（A 组） | test-01（类别判错）；test-13（族内选设备，A 组不保证） |
-| §1 Top3 ≥13/14 | Q1 + 补位不混排（保来源可查） | 旧 8 例 Top3 71.4% 的 2 例未命中 |
-| §1 拒答 2/2、误拒答 0/14 | Q3 R1（前置）+ GATE-02（后置） | test-07/test-16 漏答；test-10/11/05/09 误杀风险 |
-| §1 REASONING<8000/P95<12000；token<4000；截断率<5% | Q4 第 1 条（输出）+ 第 2 条（输入瘦身）+ 第 3~5 条 | P95 14991ms = 一次修复重试双调用；单事件 ≈5446 输入占大头 |
-| §1 一次通过率 ≥95%；§4 AC-6 输出体量 | schema 上限收紧与 prompt 骨架同批改 | 现状 ≈89%，1 例双调用；输出是延迟主因 |
-| §2.1 R1 / §4 AC-1,2,3 | `gateContext`，未抑制告警 + `beforeFirstAlert` + `meta.gate.rule` | test-07、test-16；dev-04、test-10（边界） |
-| §2.3 拒答文案三段式 | 门禁生成 missingInfo 替换 ruleFallback 默认文案 + 4 枚举 + 黑名单单测 | PRD §2.3 例 |
-| §4 AC-8 清单哈希 | evals/run.ts（不在本模块，需排期） | PRD §3.4 冻结机制 |
+| PRD 条目                                           | 架构手段                                                              | 追溯的失败场景 / 证据                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------- |
+| §1 Top1 ≥11/14                                     | Q1 字典注入（A 组）                                                   | test-01（类别判错）；test-13（族内选设备，A 组不保证）    |
+| §1 Top3 ≥13/14                                     | Q1 + 补位不混排（保来源可查）                                         | 旧 8 例 Top3 71.4% 的 2 例未命中                          |
+| §1 拒答 2/2、误拒答 0/14                           | Q3 R1（前置）+ GATE-02（后置）                                        | test-07/test-16 漏答；test-10/11/05/09 误杀风险           |
+| §1 REASONING<8000/P95<12000；token<4000；截断率<5% | Q4 第 1 条（输出）+ 第 2 条（输入瘦身）+ 第 3~5 条                    | P95 14991ms = 一次修复重试双调用；单事件 ≈5446 输入占大头 |
+| §1 一次通过率 ≥95%；§4 AC-6 输出体量               | schema 上限收紧与 prompt 骨架同批改                                   | 现状 ≈89%，1 例双调用；输出是延迟主因                     |
+| §2.1 R1 / §4 AC-1,2,3                              | `gateContext`，未抑制告警 + `beforeFirstAlert` + `meta.gate.rule`     | test-07、test-16；dev-04、test-10（边界）                 |
+| §2.3 拒答文案三段式                                | 门禁生成 missingInfo 替换 ruleFallback 默认文案 + 4 枚举 + 黑名单单测 | PRD §2.3 例                                               |
+| §4 AC-8 清单哈希                                   | evals/run.ts（不在本模块，需排期）                                    | PRD §3.4 冻结机制                                         |
 
 本项目内**没有**无法追溯到失败场景的改动（唯一例外是 PRD §5 明确 Out-of-Scope 的 test-08 聚类缺陷：规则基线唯一失败点，保持现状）；若实现期出现无追溯项，按 ADR-001 的 Decision 逐条否决。
