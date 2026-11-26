@@ -94,6 +94,18 @@ export const AnalysisMetaSchema = z.object({
   degradedReason: z.string().nullable().default(null),
   /** 本次研判的 token 用量：评测要算成本，缓存命中时也要能读回来 */
   tokensUsed: z.number().nullable().optional(),
+  /**
+   * 后置门禁 GATE-02 的清空记录（Spec §3.3）：清了几条、每条为什么。
+   * 落库理由：拒答是**需要复盘的事件**，事后要能回答"是模型没给结论，还是门禁清空了它的结论"。
+   */
+  gate: z
+    .object({
+      cleared: z.number(),
+      reasons: z.array(z.string()),
+    })
+    .optional(),
+  /** 本次研判的提示词形态（RCA_HINT 开/关）：A/B 对比与回滚复盘都要能对上号 */
+  promptHint: z.enum(['on', 'off']).optional(),
   /** 研判时的拓扑完整度（评审 P0-4）：缺拓扑时置信度已按上限下调，事后可复核 */
   topology: z
     .object({

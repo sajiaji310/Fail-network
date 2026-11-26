@@ -1,12 +1,11 @@
 import { db } from '@/lib/db';
-import { llmMode, type LlmMode } from '@/lib/env';
-import { completeJson, extractJson } from '@/lib/llm/client';
+import { llmMode, rcaGateEnabled, rcaHintEnabled, type LlmMode } from '@/lib/env';
 import { createLogger } from '@/lib/logger';
 import { capConfidence } from '@/modules/topology/completeness';
-import { buildIncidentContext, type ContextBundle } from './context';
-import { ruleFallback } from './fallback';
-import { buildMockModelOutput } from './mock';
+import { buildIncidentContext } from './context';
+import { clearanceMissingInfo, gateHypotheses } from './gate';
 import { persistAnalysis } from './persist';
+import { produceResult } from './produce';
 import {
   beginAnalysis,
   enterStage,
@@ -14,12 +13,11 @@ import {
   finishAnalysis,
   type AnalysisProgress,
 } from './progress';
-import { PROMPT_VERSION, renderPrompt } from './prompt';
+import { PROMPT_VERSION } from './prompt';
 import {
   AnalysisResultSchema,
   parseAnalysisMeta,
   type AnalysisMeta,
-  type AnalysisResult,
   type Drop,
   type HypothesisDraft,
 } from './schema';
@@ -28,12 +26,14 @@ import { buildVerifyContext, verifyHypotheses } from './verify';
 /**
  * 研判编排（文档 4.1 步 4~6 + 10.4 调用策略）。
  *
- *   context → (规则 fallback | LLM) → zod 校验（失败修复一次）→ L1/L2/L3 → 落库
+ *   context → (规则 fallback | 前置 R1 | LLM) → zod 校验 → L1/L2/L3 → GATE-02 → 落库
  *
  * 三条不能让步的约束：
  *   1. 无 key 全链路可用（AC-07）：fallback 不是"出错时的兜底"，而是一等公民；
  *   2. 模型输出不合 schema 就修复一次，再不合就降级，绝不把半成品塞给前端；
  *   3. 校验后若一条不剩，落空摘要 + missingInfo（AC-20），不留上一轮结论。
+ *
+ * 0.2 起"产出"这一段搬去 `produce.ts`（含前置门禁与止损），本文件只负责编排与落库。
  */
 
 export const ANALYSIS_CACHE_MS = 5 * 60 * 1000;
@@ -64,22 +64,9 @@ export type AnalysisOutcome = {
   analyzedAt: string;
   /** 本次研判的阶段耗时（评审第 3 阶段）：命中缓存时为 null */
   progress?: AnalysisProgress | null;
+  /** 后置门禁 GATE-02 清空了几条、为什么（Spec §3.3）：命中缓存时为 undefined */
+  gate?: { cleared: number; reasons: string[] };
 };
-
-type ParsedResult = { ok: true; data: AnalysisResult } | { ok: false; error: string };
-
-function parseResult(content: string): ParsedResult {
-  const raw = extractJson(content);
-  if (raw === null) return { ok: false, error: '输出不是合法 JSON' };
-  const parsed = AnalysisResultSchema.safeParse(raw);
-  if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
-      .join('; ');
-    return { ok: false, error: detail };
-  }
-  return { ok: true, data: parsed.data };
-}
 
 /** 从库里读回上一次研判（命中缓存时不再调用模型） */
 async function readCachedAnalysis(
@@ -141,72 +128,6 @@ async function readCachedAnalysis(
   };
 }
 
-function degradedOutcome(ctx: ContextBundle, reason: string) {
-  const result = ruleFallback(ctx);
-  return {
-    result,
-    source: 'RULE_FALLBACK' as const,
-    model: null,
-    tokensUsed: null,
-    degradedReason: reason,
-  };
-}
-
-async function produceResult(
-  ctx: ContextBundle,
-  mode: LlmMode,
-): Promise<{
-  result: AnalysisResult;
-  source: 'LLM' | 'RULE_FALLBACK';
-  model: string | null;
-  tokensUsed: number | null;
-  degradedReason: string | null;
-}> {
-  if (mode === 'fallback') {
-    return degradedOutcome(ctx, '未配置 LLM_API_KEY，本次由规则引擎给出结论');
-  }
-
-  const prompt = renderPrompt(ctx);
-  const fixture = () => buildMockModelOutput(ctx);
-
-  try {
-    const first = await completeJson({ ...prompt, mock: fixture });
-    const parsed = parseResult(first.content);
-    if (parsed.ok) {
-      return {
-        result: parsed.data,
-        source: 'LLM',
-        model: first.model,
-        tokensUsed: first.tokensUsed,
-        degradedReason: null,
-      };
-    }
-
-    // 修复重试（文档 10.4）：把 zod 错误原样回喂，只重试一次
-    log.warn('rca_schema_retry', { error: parsed.error });
-    const repair = await completeJson({
-      ...prompt,
-      user: `${prompt.user}\n\n[上一次输出未通过校验]\n${parsed.error}\n请修正后只输出 JSON 对象。`,
-      mock: fixture,
-    });
-    const repaired = parseResult(repair.content);
-    if (repaired.ok) {
-      return {
-        result: repaired.data,
-        source: 'LLM',
-        model: repair.model,
-        tokensUsed: (first.tokensUsed ?? 0) + (repair.tokensUsed ?? 0),
-        degradedReason: '首次输出格式不合格，已修复一次',
-      };
-    }
-
-    return degradedOutcome(ctx, `模型输出两次未通过 schema 校验：${repaired.error.slice(0, 120)}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return degradedOutcome(ctx, `模型调用失败（${message.slice(0, 120)}）`);
-  }
-}
-
 export async function runAnalysis(
   idOrCode: string,
   opts: { force?: boolean; tenantId?: string } = {},
@@ -237,17 +158,34 @@ export async function runAnalysis(
     enterStage(progressKey, 'VERIFY');
     const verify = verifyHypotheses(produced.result.hypotheses, buildVerifyContext(ctx));
 
+    // 后置门禁 GATE-02（Spec §3.3）：校验器只回答"证据真不真、相不相关"，
+    // 门禁回答"这条推理有没有承重墙"—— 只引了拓扑/指标/案例的假设一律清空。
+    // RCA_GATE=off 时连函数都不调用，行为逐字回到 0.1（验收标准 9）。
+    const gate = rcaGateEnabled()
+      ? gateHypotheses({ hypotheses: verify.kept, ctx })
+      : { kept: verify.kept, cleared: [] };
+
     const analyzedAt = new Date().toISOString();
     // 缺拓扑时一律压低置信度（评审 P0-4）：上限由完整度决定，不是模型自己说了算。
     // 只做 min 截断，不改变假设之间的相对顺序。
-    const kept = verify.kept.map((hypothesis) => ({
+    const kept = gate.kept.map((hypothesis) => ({
       ...hypothesis,
       confidence: capConfidence(hypothesis.confidence, ctx.topology.level),
     }));
     const missingInfo =
       kept.length === 0
-        ? [...new Set([...produced.result.missingInfo, '全部假设未通过证据校验，未能给出可信根因'])]
+        ? [
+            ...new Set([
+              ...produced.result.missingInfo,
+              '全部假设未通过证据校验或归因门禁，未能给出可信根因',
+              ...clearanceMissingInfo(gate.cleared),
+            ]),
+          ].slice(0, 5)
         : produced.result.missingInfo;
+    const gateMeta = {
+      cleared: gate.cleared.length,
+      reasons: gate.cleared.map((item) => `${item.reason}：${item.detail}`),
+    };
 
     const meta: AnalysisMeta = {
       analyzedAt,
@@ -259,6 +197,8 @@ export async function runAnalysis(
       trim: ctx.trim.trimmed,
       degradedReason: produced.degradedReason,
       tokensUsed: produced.tokensUsed,
+      gate: gateMeta,
+      promptHint: rcaHintEnabled() ? 'on' : 'off',
       topology: {
         level: ctx.topology.level,
         deviceCount: ctx.topology.deviceCount,
@@ -309,6 +249,7 @@ export async function runAnalysis(
       degradedReason: produced.degradedReason,
       analyzedAt,
       progress,
+      gate: gateMeta,
     };
   } catch (error) {
     failAnalysis(progressKey, error instanceof Error ? error.message : String(error));
