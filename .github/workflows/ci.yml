@@ -25,7 +25,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run db:push
+      # 与交付形态一致：跑迁移基线而不是 db push，顺带在 CI 验证 migrations 可用
+      - run: npx prisma migrate deploy
+      # 集成测试依赖种子设备（ACC-SW-01 等），缺了会 findFirstOrThrow 失败
+      - run: npm run db:seed
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
