@@ -1,11 +1,16 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-26 18:20
+> 最后更新：2026-11-26 20:25
 
 ## 当前任务
 
-**第 4 阶段验收已在本机跑完。** 生产服务在 3100，`/api/health` 为 `status=ok db=up llm=live`。`accept:phase4 --write` 对 3100 是 PASS 15 / FAIL 0，随后 `--clean`（告警 1 · 事件 0 · 批次 4 · 采样 4）。Playwright 2 条通过。`lint`、`tsc`、`next build`（产物在 `.next-serve`）、`npm test`（339）都通过。8 张截图已按当前页面重生成。研判降级测试在文件内临时清空 Key，避免 `.env` 有 Key 时打到模型并超时。
+**交付前收口第二轮（详见文末「交付前收口第二轮」一节）。** 收掉上一轮 review 列出的漂移与缺陷：
+控制台登录后写接口放行、413 错误码统一为 `PAYLOAD_TOO_LARGE`、登录接口改走 `readJsonLimited`、
+README 补真实模型留出集对照、API.md / RELEASE / 框架文档补漂移、新增 Prisma 迁移基线。
+门禁 lint / typecheck / **test 345 passed（45 文件）** 全绿。
+
+上一轮（同日 18:20）：第 4 阶段验收已在本机跑完。生产服务在 3100，`/api/health` 为 `status=ok db=up llm=live`。`accept:phase4 --write` 对 3100 是 PASS 15 / FAIL 0，随后 `--clean`（告警 1 · 事件 0 · 批次 4 · 采样 4）。Playwright 2 条通过。`lint`、`tsc`、`next build`（产物在 `.next-serve`）都通过。8 张截图已按当前页面重生成。研判降级测试在文件内临时清空 Key，避免 `.env` 有 Key 时打到模型并超时。
 
 阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
 
@@ -382,6 +387,64 @@ L2 仍要求设备在影响面 ≤2 跳内。
 **门禁**：format / lint / typecheck / **test 316 passed（41 文件）** / build（新路由 9 条）/ **E2E 2 passed** 全绿；
 截图新增 `sources.png` 与 `metrics.png`，全部用生产构建重拍。
 
+## 交付前收口第二轮（2026-11-26）
+
+起因是对照 v0.1.0 之后的代码做了一次 gap review：4 个文件改了没提交、README 只放规则降级分数、
+文档多处与实现不一致、没有 migration 历史。本轮逐项收口。
+
+**1. 控制台登录后可以写接口（上轮未提交的 4 个文件，本轮验收并提交）**
+
+- 问题：上一轮给页面加了口令 cookie，但 `/api/v1/*` 写接口仍只认 `x-api-key` —— 浏览器不会带，
+  结果是「登录成功的管理员在页面上点结案会 401」。
+- 做法：middleware 验过 cookie 后注入 `x-netscope-console: 1`（`CONSOLE_TRUST_HEADER`），
+  转发前**先删掉调用方自带的同名头**；`auth.ts` 的 `roleOf/tenantOf` 认这个头，按 ADMIN + default
+  租户处理，`actorOf` 记 `console`。
+- 边界（已写进 API.md）：**持有控制台 cookie = 12 小时 ADMIN + default 租户**。没有用户表，
+  也没有按人分权；cookie 是 HttpOnly + SameSite=Lax，没有额外 CSRF token。
+- 测试：单测里伪造 `x-netscope-console` 头不会放行（未配 Key 时仍 500）；带合法 cookie 的 PATCH 200。
+- 生产冒烟（`APP_ENV=production` + `API_KEY` + `CONSOLE_PASSWORD`，3101 端口，8 步全过）：
+  未登录页面 307 → `/login`、错口令 401、对口令 200 + HttpOnly cookie、伪造信任头且无 cookie 仍 401、
+  cookie 调 `/api/v1/admin/retention` 200（dry-run）、cookie 写不存在资源 404（已过鉴权）、
+  登录后页面 200、退出 303。
+
+**2. 413 错误码统一**
+
+之前 middleware 对声明超限返回 `BODY_TOO_LARGE`，`lib/http/body.ts` 对流式超限返回
+`PAYLOAD_TOO_LARGE`，API.md 只写了后者 —— 客户端按文档判断会漏掉一半。现在两条路径都是
+`PAYLOAD_TOO_LARGE`；`SERVER_MISCONFIG` 同时登记进 `lib/errors.ts` 与 API.md 错误码表。
+
+**3. 登录接口走流式 body 限制**
+
+`/api/console/session` 原来直接 `req.json()`，chunked 大 body 不在 Content-Length 那条防线内。
+改用 `readJsonLimited` + `toErrorBody`，错误码与其他写路由一致（400 / 401 / 413 / 500）。
+新增 `route.test.ts` 5 条：口令对 200 + HttpOnly cookie、口令错 401、未配口令 500、
+非法/空 body 400、声明超限 413（与流式超限同 code）。
+
+**4. README 补真实模型对照**
+
+`evals/results/test-live.md` 的留出集结果之前只躺在 evals 里，README 主表只有规则降级的 85.7%。
+现在 README 加「真实模型对照」一节，两张表并排，并写明结论：**这份留出集上 LLM 没有比规则引擎更准，
+还慢两个数量级**；下一轮该做 prompt / 上下文工程与拒答约束，而不是扩功能。
+
+**5. 文档漂移**
+
+- API.md：补 `/api/console/session`、`/api/console/logout`；安全边界补控制台 cookie、信任头、
+  登录计入写限流窗口；`correlation/run` 补 `{from,to}` 回放参数；错误码表补 `SERVER_MISCONFIG`。
+- RELEASE-v0.1.0：加「本版之后的修正」，把「页面不做鉴权」「历史不能回放」「设备名全局唯一」
+  三条过期限制改掉。
+- 框架文档：加「实现偏差汇总」一节，指向本文件的偏差清单，不再让第 8 节模型被当成现状。
+
+**6. Prisma 迁移基线**
+
+`prisma/migrations/20261126000000_init/migration.sql`（473 行）+ `migration_lock.toml`。
+不是"生成了就算"：临时库 `netscope_mig_check` 上 `migrate deploy` 成功 →
+`migrate diff --from-url=<临时库> --to-schema-datamodel` 输出 empty migration（与 schema 完全一致）→
+`db:seed` 出 30 设备 / 60 链路 / 30 案例 / 90 历史告警 → dropdb 清场。
+老库（用 `db push` 建的，含本机演示库）第一次要先
+`npx prisma migrate resolve --applied 20261126000000_init`，否则 `migrate dev` 会尝试重建已有表。
+
+**门禁**：lint / typecheck / **test 345 passed（45 文件）** 全绿（较上轮 +5，即登录路由测试）。
+
 ## 未完成 / 已知偏差
 
 - ~~B4（人工拆分）按文档推迟到 P2~~ → 已在第 2 阶段实现（`POST /api/v1/incidents/[id]/split`）
@@ -422,7 +485,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 - **`notFound()` 的 HTTP 状态码是 200**（页面内容与 `meta[name=next-error]=not-found` 正确）：`(console)` 布局先出流，Next 流式渲染下无法回写 404。API 侧仍是标准 404，验收看页面内容即可
 - **拓扑层内换行**：25 台接入单行铺开宽 4450px，`fitView` 需缩到 0.16 而 `minZoom` 卡 0.2 → 必然裁切。改为每行 8 列、行距 56（层间距 96），宽度降到 1398
 - `resetDemoData` 从 `scripts/demo-reset.ts` 下沉到 `src/modules/ingest/reset.ts`：API 与 CLI 共用，避免 `src` 反向依赖 `scripts`（原文件保留为 re-export）
-- 文档 8 节 `Device.alerts` 笔误、`IncidentAlert` 未建表、`embedding` 降级 `String?`、`Incident` 缺 `lastSeen`（均见 T02/T05 记录，需回写文档）
+- 文档 8 节 `Device.alerts` 笔误、`IncidentAlert` 未建表、`embedding` 降级 `String?`、`Incident` 缺 `lastSeen`（均见 T02/T05 记录）。框架文档已补「0.2 实现偏差汇总」，模型以 `prisma/schema.prisma` + migrations 为准
 - 本机沙箱单轮删除 >50 文件会拦截（`next build` 清旧产物正好触发）。构建用
   `NEXT_DIST_DIR=.next-serve npm run build` 落到新目录即可绕开；默认路径（dev 用 `.next-dev`、
   生产用 `.next`）不受影响，Docker 内不涉及
@@ -430,7 +493,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 - **评测集分布与框架 10.5 不一致**：框架设想正例/干扰例/对抗例各 8，实际 dev 6/5/5、test 2/2/4。
   对抗例偏多是刻意的（MVP 阶段错判代价高于漏判），但正例只有 2 个的 test 集统计意义有限，
   分母小于 10 时一个场景就能挪动 14 个百分点
-- **留出集已用真实模型跑过**（2026-11-26，DeepSeek `deepseek-chat`）：结果在 `evals/results/test-live.md`。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、49017 token、fallback 0、平均 8969 ms。9 次调用都是 `source=LLM`，日志里没有 schema 修复，也没有超时降级。失败是 test-01（上游归因）、test-07（该空结论却给了假设）、test-08（拓扑全缺）。规则引擎基线 `evals/results/test.md` 没动，README 仍对那张表（Top1/Top3 85.7%，只败 test-08）
+- **留出集已用真实模型跑过**（2026-11-26，DeepSeek `deepseek-chat`）：结果在 `evals/results/test-live.md`。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、49017 token、fallback 0、平均 8969 ms。9 次调用都是 `source=LLM`，日志里没有 schema 修复，也没有超时降级。失败是 test-01（上游归因）、test-07（该空结论却给了假设）、test-08（拓扑全缺）。规则引擎基线 `evals/results/test.md` 没动，README 已加「真实模型对照」把两张表并排（2026-11-26 第二轮）
 - **Docker 镜像已构建**：`netscope-app:latest`。还没 `compose up`，因为本机 5432 被便携版 Postgres 占着
 - **留出集压缩比 6.0:1，等于数据集上限**：54 条告警 / 9 个标注事件，压缩效率 100%。
   二次收敛已经落地（同指纹、原事件仍活跃、上限 6 小时）。绝对比值要高于 6:1，只能换平均每事件不少于 8 条告警的数据，不是再改聚类
@@ -441,7 +504,7 @@ L2 仍要求设备在影响面 ≤2 跳内。
 - **新增 7 张表**（文档 8 节模型没有）：`HypothesisVerify`（验证勾选）、`Service` / `ServiceDevice`（业务服务依赖）、
   `DeviceAlias`（真实源主机名映射）、`MetricSample`（指标快照）、`IngestBatch`（导入批次）、`Tenant`（租户）；
   `Incident` 同时新增 `assignee / team / claimedAt / slaMinutes / tenantId` 五个字段。理由同前几阶段的
-  `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这些列承载，回写文档待办
+  `statusLog` / `analysisMeta`：框架给的是最小模型，产品要的能力需要这些列承载。框架文档已补「0.2 实现偏差汇总」指向本节
 - **接手没有身份校验**：`assignee` 仍是自由填写的名字。RBAC 管住了"谁能写"，但"只能接自己的单"
   需要用户表与登录态，MVP-0 没有；当前身份只有 API Key 的 `actor`
 - **多租户查询已按 Key 的 tenantId 收口**（2026-11-21）：事件接手/流转/拆分/假设/验证、案例检索与确认、报告、RCA、聚合、告警列表、拓扑、保留策略、模拟 reset、运行指标都带租户条件。`Alert` 增加 `tenantId`，外部键唯一约束改为 `(tenantId, externalKey)`，同一外部 ID 可以在不同租户各记一条。本机用 `prisma/manual/20261121_alert_tenant.sql` 加上去（仓库没有 migration 历史，`db push` 会把换唯一索引误报成数据丢失，所以用这条只加列、只换索引的 SQL）。新列默认 `default`，已有行回填后仍落在 default 租户。种子历史告警的外部键以 `seed:` 开头，也落在 default 租户。
@@ -477,15 +540,20 @@ L2 仍要求设备在影响面 ≤2 跳内。
 
 ## 下一步
 
-1. 人工验收第 4 阶段：`npm run accept:phase4 -- --write`（15 项断言，本机首轮 PASS 15 / FAIL 0），
+1. 本机演示库登记迁移基线：`npx prisma migrate resolve --applied 20261126000000_init`（只登记，不改数据），
+   之后结构变更走 `npx prisma migrate dev`，不要再用 `db push` 改已有库
+2. 人工验收第 4 阶段：`npm run accept:phase4 -- --write`（15 项断言，本机首轮 PASS 15 / FAIL 0），
    再人工看 `/sources` 的别名表与 `/metrics` 的四个数字是否符合预期；验完 `--clean` 清场
-2. ~~用真实环境的一批告警回填~~ → 已完成（T16，1.2 万条 / 36.2s / 331 行每秒，见上）。
+3. ~~用真实环境的一批告警回填~~ → 已完成（T16，1.2 万条 / 36.2s / 331 行每秒，见上）。
    真实环境回填时重点看两项：**「设备不存在」占比**（决定别名表还要补多少）与
    **聚合后的事件数**（历史告警不会成簇；候选只包括仍为 ACTIVE、且 `lastSeen` 在最近 2 小时内的告警）
-3. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag，指向 `ed2a8dd`）+ `docs/RELEASE-v0.1.0.md`。
+4. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag，指向 `ed2a8dd`）+ `docs/RELEASE-v0.1.0.md`。
    GitHub Topics / Release 还差一步 —— **仓库没有配置 remote**，需要先 `git remote add origin <url>` 再 push
-   `main` 与 `v0.1.0`
-4. 历史回放已经有了：`npm run corr:run -- --from=<最早 lastSeen> --to=<最晚 lastSeen>`。不要把时间戳平移到当前窗口
+   `main` 与 `v0.1.0`；Docker 仍未 `compose up` 实机验证（本机 5432 被便携版 PG 占着）
+5. 历史回放已经有了：`npm run corr:run -- --from=<最早 lastSeen> --to=<最晚 lastSeen>`。不要把时间戳平移到当前窗口
+6. **下一轮先做研判质量，不是新功能**：真实模型留出集 Top1 57.1% 低于规则基线 85.7%，
+   优先做 prompt / 上下文工程与「证据不足就拒答」；其余 P1 项（SSE、拓扑编辑、语义检索、用户表、
+   进程外队列、状态历史表、评测集扩容）仍按评审第 0 节排队
 
 ## T09 人工验收清单
 

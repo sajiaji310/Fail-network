@@ -14,6 +14,7 @@ export const ERROR_CODES = {
   PAYLOAD_TOO_LARGE: { status: 413, message: '请求体过大' },
   RATE_LIMITED: { status: 429, message: '请求过于频繁' },
   LLM_UNAVAILABLE: { status: 503, message: '模型不可用且降级失败' },
+  SERVER_MISCONFIG: { status: 500, message: '服务端配置缺失' },
   INTERNAL: { status: 500, message: '服务内部错误' },
 } as const;
 

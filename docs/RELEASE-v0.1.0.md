@@ -65,6 +65,21 @@ npm run dev
 - **接手没有身份校验**：`assignee` 是自由填写的名字（要"只能接自己的单"需要用户表与登录态）
 - 完整清单见 `docs/STATE.md` 的「未完成 / 已知偏差」
 
+## 本版之后的修正（2026-11-26，尚未打 tag）
+
+上面「已知限制」里有三条已经过期，以这里为准：
+
+- **「页面不做鉴权」已不成立**：production 下页面要 `CONSOLE_PASSWORD` 换 12h HttpOnly cookie，
+  没配口令直接 500；登录后调 `/api/v1/*` 写接口不再需要另带 API Key（等同 ADMIN + default 租户）。
+  local / staging 仍不拦，E2E 与评测不受影响。
+- **「历史告警不能回放」已不成立**：`POST /api/v1/correlation/run` 接受 `{from,to}`，按告警自己的时间重放聚合。
+- **「Device.name 仍全局唯一」已不成立**：设备名、别名、事件编号均已改为租户内唯一。
+
+其余限制仍然有效：Docker 未实机、批次/研判进度/限流在进程内、指标是采样快照而非 TSDB、接手没有身份校验。
+
+另外本轮统一了 413 错误码（声明超限与流式读取超限现在都是 `PAYLOAD_TOO_LARGE`），
+并补上了真实模型的留出集结果 —— 见 `evals/results/test-live.md` 与 README「真实模型对照」。
+
 ## 验收入口
 
 ```bash

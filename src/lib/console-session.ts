@@ -7,6 +7,8 @@
  */
 
 export const CONSOLE_COOKIE = 'netscope_console';
+/** middleware 验过 cookie 之后才打上。路由只认这个头，调用方自己带的会被剥掉。 */
+export const CONSOLE_TRUST_HEADER = 'x-netscope-console';
 export const CONSOLE_TTL_MS = 12 * 60 * 60 * 1000;
 export const CONSOLE_TTL_SECONDS = CONSOLE_TTL_MS / 1000;
 

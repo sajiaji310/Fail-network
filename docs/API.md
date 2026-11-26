@@ -6,20 +6,21 @@
 
 ## 关键错误码
 
-| code                    | HTTP | 场景                                               |
-| ----------------------- | ---- | -------------------------------------------------- |
-| `VALIDATION_FAILED`     | 400  | zod 校验失败，details 带字段路径                   |
-| `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配          |
-| `FORBIDDEN`             | 403  | Key 有效但角色不足，`details` 带 `required/actual` |
-| `NOT_FOUND`             | 404  | 资源不存在                                         |
-| `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`）  |
-| `ALREADY_CLAIMED`       | 409  | 事件已被他人接手，`details` 带当前责任人           |
-| `INCIDENT_CLOSED`       | 409  | 事件已结束，不能再变更处理人                       |
-| `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                         |
-| `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）          |
-| `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`      |
-| `LLM_UNAVAILABLE`       | 503  | 模型超时且降级也失败                               |
-| `INTERNAL`              | 500  | 兜底，日志带 traceId                               |
+| code                    | HTTP | 场景                                                                                                             |
+| ----------------------- | ---- | ---------------------------------------------------------------------------------------------------------------- |
+| `VALIDATION_FAILED`     | 400  | zod 校验失败，details 带字段路径                                                                                 |
+| `UNAUTHORIZED`          | 401  | production 下缺 `x-api-key` 或 key 不匹配                                                                        |
+| `FORBIDDEN`             | 403  | Key 有效但角色不足，`details` 带 `required/actual`                                                               |
+| `NOT_FOUND`             | 404  | 资源不存在                                                                                                       |
+| `INVALID_TRANSITION`    | 409  | 事件状态非法流转（含 AC-08 的 `RESOLVED → OPEN`）                                                                |
+| `ALREADY_CLAIMED`       | 409  | 事件已被他人接手，`details` 带当前责任人                                                                         |
+| `INCIDENT_CLOSED`       | 409  | 事件已结束，不能再变更处理人                                                                                     |
+| `DUPLICATE_FINGERPRINT` | 409  | 唯一键冲突                                                                                                       |
+| `PAYLOAD_TOO_LARGE`     | 413  | 请求体超过 `BODY_LIMIT_BYTES`（默认 2MB）；声明超限（middleware）与流式读取超限（`lib/http/body.ts`）共用此 code |
+| `RATE_LIMITED`          | 429  | 触发 IP 滑动窗口限流，`details.retryAfter=60`                                                                    |
+| `LLM_UNAVAILABLE`       | 503  | 模型超时且降级也失败                                                                                             |
+| `SERVER_MISCONFIG`      | 500  | production 缺 `API_KEY` / `CONSOLE_PASSWORD`，fail-closed，不静默放行                                            |
+| `INTERNAL`              | 500  | 兜底，日志带 traceId                                                                                             |
 
 ## 系统
 
@@ -31,15 +32,17 @@
 
 ## 安全边界
 
-| 维度     | 规则                                                                                                       |
-| -------- | ---------------------------------------------------------------------------------------------------------- |
-| 鉴权     | 仅 `APP_ENV=production` 生效：`/api/v1/*` 写方法 + 敏感读接口需要 `x-api-key`；local 放行                  |
-| 角色     | 写操作需 `RESPONDER`；`/api/v1/audit`、`/api/v1/admin/*`、`/api/v1/sources/*` 需 `ADMIN`（403 说明缺什么） |
-| 租户     | 租户由 Key 绑定（`tenant` 字段），不接受请求头自称；列表/详情/案例/审计按租户过滤                          |
-| 限流     | 全环境按 IP 滑动窗口：写 30/min、读 120/min（`RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN`）      |
-| 请求体   | 声明超限由中间件直接 413；chunked 上传由 `lib/http/body.ts` 边读边计数，超限立即断流                       |
-| 数据库   | `docker-compose.yml` 端口绑 `127.0.0.1`，不对外暴露                                                        |
-| 健康检查 | 不返回数据库错误原文、连接串、主机名                                                                       |
+| 维度     | 规则                                                                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 鉴权     | 仅 `APP_ENV=production` 生效：`/api/v1/*` 写方法 + 敏感读接口需要 `x-api-key`，**或已登录的控制台 cookie**；local 放行                                  |
+| 角色     | 写操作需 `RESPONDER`；`/api/v1/audit`、`/api/v1/admin/*`、`/api/v1/sources/*` 需 `ADMIN`（403 说明缺什么）                                              |
+| 控制台   | 页面要 `CONSOLE_PASSWORD` 换的 12h HttpOnly cookie；未配口令则页面 500。**持 cookie 调 `/api/v1/*` 等同 ADMIN + default 租户**，审计 actor 记 `console` |
+| 信任头   | `x-netscope-console` 由 middleware 验过 cookie 后注入，调用方自带的同名头一律剥离；路由不接受请求头自称身份                                             |
+| 租户     | 租户由 Key 绑定（`tenant` 字段），不接受请求头自称；列表/详情/案例/审计按租户过滤；控制台视图固定 default 租户                                          |
+| 限流     | 全环境按 IP 滑动窗口：写 30/min、读 120/min（`RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN`）；登录接口计入写窗口，防口令碰撞                   |
+| 请求体   | 声明超限由中间件直接 413；chunked 上传由 `lib/http/body.ts` 边读边计数，超限立即断流                                                                    |
+| 数据库   | `docker-compose.yml` 端口绑 `127.0.0.1`，不对外暴露                                                                                                     |
+| 健康检查 | 不返回数据库错误原文、连接串、主机名                                                                                                                    |
 
 ### Key 配置与 RBAC
 
@@ -59,6 +62,19 @@ API_KEY="sk-legacy-xxx"
 | `ADMIN`     | 审计查询、数据源别名、保留策略清理                       |
 
 判定逻辑在 `lib/rbac.ts`（纯函数，按方法与路径前缀），middleware 与路由内 `assertRole` 共用同一套规则。
+
+### 控制台登录（人用入口，非 API Key）
+
+| Method | Path                   | 说明     | 备注                                                                                                             |
+| ------ | ---------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/console/session` | 口令登录 | body `{password}`；成功 200 + `Set-Cookie: netscope_console`（HttpOnly / SameSite=Lax / 12h，HTTPS 下带 Secure） |
+| POST   | `/api/console/logout`  | 退出登录 | 清 cookie 并 303 跳回 `/login`                                                                                   |
+
+- 只在 `APP_ENV=production` 生效；local / staging 不校验，避免挡住 E2E 与评测。
+- 错误码：未配 `CONSOLE_PASSWORD` → 500 `SERVER_MISCONFIG`；口令错 → 401；body 非法 / 缺口令 → 400；
+  超限 → 413 `PAYLOAD_TOO_LARGE`（走 `readJsonLimited`，chunked 请求同样受限）。
+- 登录页打开跳转用 `next` 参数回跳，经 `safeNextPath` 过滤，只允许站内路径。
+- 页面本身没有 CSRF token，靠 `SameSite=Lax` + HttpOnly 缓解；口令即全部权限，按管理员口令保管。
 
 ## 告警
 
@@ -115,21 +131,21 @@ API_KEY="sk-legacy-xxx"
 
 ## 事件
 
-| Method | Path                                               | 说明                      | 备注                                                                                                                                    |
-| ------ | -------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/v1/incidents`                                | 事件列表                  | `?status=&severity=&queue=&page=&pageSize=`；`queue=UNASSIGNED\|UNANALYZED\|AWAITING_CONFIRM` 即值班队列                                |
-| GET    | `/api/v1/incidents/[id]`                           | 事件详情                  | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline / topology |
-| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）           | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                               |
-| POST   | `/api/v1/incidents/[id]/claim`                     | 接手 / 转派（第 3 阶段）  | body `{assignee, team?, note?, force?}`；抢单 409 `ALREADY_CLAIMED`，已结束 409 `INCIDENT_CLOSED`                                       |
-| DELETE | `/api/v1/incidents/[id]/claim`                     | 释放回队列                | 保留 `claimedAt`（响应已经发生过，不能洗掉）                                                                                            |
-| POST   | `/api/v1/incidents/[id]/split`                     | 事件拆分（人工纠错）      | body `{alertIds:[...], note?}`；见下节                                                                                                  |
-| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08）    | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                                 |
-| POST   | `/api/v1/incidents/[id]/hypotheses/[hid]/verify`   | 勾选验证步骤（第 3 阶段） | body `{stepIndex, done, note?}`；`by` 由服务端从请求身份解析，不接受前端自称                                                            |
-| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）       | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                               |
-| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）       | 返回 `text/markdown`；没生成过则 404                                                                                                    |
-| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）            | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE；响应带 `progress`                                                  |
-| GET    | `/api/v1/incidents/[id]/analyze/status`            | 研判阶段进度（第 3 阶段） | `{running, progress}`；研判是同步 POST，这里读同进程的阶段表，供前端轮询                                                                |
-| POST   | `/api/v1/correlation/run`                          | 手动触发聚合              | body `{now?}`；返回 `{created, updated, reopened, converged, merged}`                                                                   |
+| Method | Path                                               | 说明                      | 备注                                                                                                                                                                                                     |
+| ------ | -------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/incidents`                                | 事件列表                  | `?status=&severity=&queue=&page=&pageSize=`；`queue=UNASSIGNED\|UNANALYZED\|AWAITING_CONFIRM` 即值班队列                                                                                                 |
+| GET    | `/api/v1/incidents/[id]`                           | 事件详情                  | `[id]` 接受 id 或 `INC-YYYYMMDD-NNN`；含 alerts / devices / changes / hypotheses / analysis / statusLog / closure / timeline / topology                                                                  |
+| PATCH  | `/api/v1/incidents/[id]`                           | 状态流转（T08）           | body `{status, note?}`；非法流转 409 `INVALID_TRANSITION`                                                                                                                                                |
+| POST   | `/api/v1/incidents/[id]/claim`                     | 接手 / 转派（第 3 阶段）  | body `{assignee, team?, note?, force?}`；抢单 409 `ALREADY_CLAIMED`，已结束 409 `INCIDENT_CLOSED`                                                                                                        |
+| DELETE | `/api/v1/incidents/[id]/claim`                     | 释放回队列                | 保留 `claimedAt`（响应已经发生过，不能洗掉）                                                                                                                                                             |
+| POST   | `/api/v1/incidents/[id]/split`                     | 事件拆分（人工纠错）      | body `{alertIds:[...], note?}`；见下节                                                                                                                                                                   |
+| PATCH  | `/api/v1/incidents/[id]/hypotheses/[hypothesisId]` | 采纳 / 否决假设（T08）    | body `{verdict:'ACCEPTED'\|'REJECTED'\|null, note?}`；`null` = 撤销裁决                                                                                                                                  |
+| POST   | `/api/v1/incidents/[id]/hypotheses/[hid]/verify`   | 勾选验证步骤（第 3 阶段） | body `{stepIndex, done, note?}`；`by` 由服务端从请求身份解析，不接受前端自称                                                                                                                             |
+| POST   | `/api/v1/incidents/[id]/report`                    | 生成复盘报告（T08）       | 返回 `text/markdown`；`?save=0` 只生成不落库；报告 id 在 `x-report-id` 头                                                                                                                                |
+| GET    | `/api/v1/incidents/[id]/report`                    | 最近一次报告（T08）       | 返回 `text/markdown`；没生成过则 404                                                                                                                                                                     |
+| POST   | `/api/v1/incidents/[id]/analyze`                   | AI 研判（T07）            | `?force=1` 或 body `{force:true}` 跳过 5 分钟缓存；同步返回，非 SSE；响应带 `progress`                                                                                                                   |
+| GET    | `/api/v1/incidents/[id]/analyze/status`            | 研判阶段进度（第 3 阶段） | `{running, progress}`；研判是同步 POST，这里读同进程的阶段表，供前端轮询                                                                                                                                 |
+| POST   | `/api/v1/correlation/run`                          | 手动触发聚合 / 历史回放   | body `{now?}` 调试用指定基准时刻；`{from,to}` 成对出现时按告警自己的时间重放聚合（不改时间戳），命令行 `npm run corr:run -- --from=... --to=...`；返回 `{created, updated, reopened, converged, merged}` |
 
 值班相关字段（第 3 阶段）：
 

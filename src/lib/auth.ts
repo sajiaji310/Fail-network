@@ -1,3 +1,4 @@
+import { CONSOLE_TRUST_HEADER } from './console-session';
 import { AppError } from './errors';
 import {
   DEFAULT_TENANT,
@@ -38,13 +39,17 @@ export function credentialOf(req: Request): Credential | null {
  *
  * **不接受 `x-tenant` 之类的请求头**：租户如果由调用方自称，隔离就只是一句口号。
  */
+function signedInConsole(req: Request): boolean {
+  return req.headers.get(CONSOLE_TRUST_HEADER) === '1';
+}
+
 export function tenantOf(req: Request): string {
-  if (APP_ENV !== 'production') return DEFAULT_TENANT;
+  if (APP_ENV !== 'production' || signedInConsole(req)) return DEFAULT_TENANT;
   return credentialOf(req)?.tenantId ?? DEFAULT_TENANT;
 }
 
 export function roleOf(req: Request): Role {
-  if (APP_ENV !== 'production') return 'ADMIN';
+  if (APP_ENV !== 'production' || signedInConsole(req)) return 'ADMIN';
   return credentialOf(req)?.role ?? 'VIEWER';
 }
 
@@ -64,8 +69,9 @@ export function assertRole(req: Request, method: string, pathname: string): void
   }
 }
 
-/** 审计 actor：production 用 Key 的名字（没有则脱敏尾号），本地记 local */
+/** 审计 actor：登录后的页面操作记 console；API Key 记钥匙名；本地记 local */
 export function actorOf(req: Request): string {
+  if (signedInConsole(req)) return 'console';
   const credential = credentialOf(req);
   if (!credential) return 'local';
   const label = credential.name !== 'api-key' ? credential.name : maskKey(credential.key);

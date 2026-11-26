@@ -76,7 +76,7 @@ describe('middleware 安全边界', () => {
     const mw = await loadMiddleware({ APP_ENV: 'local', BODY_LIMIT_BYTES: '1024' });
     const res = await mw(mkReq('/api/v1/ingest/alerts', 'POST', { 'content-length': '2048' }));
     expect(res.status).toBe(413);
-    expect((await res.json()).error.code).toBe('BODY_TOO_LARGE');
+    expect((await res.json()).error.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
   test('限流：连续写超过配额 → 429', async () => {
@@ -111,6 +111,22 @@ describe('middleware 安全边界', () => {
     expect(page.headers.get('x-error-code')).toBe('SERVER_MISCONFIG');
     const login = await mw(mkReq('/login'));
     expect(login.status).toBe(200);
+  });
+
+  test('production：已登录的页面可以写接口，不另带 API Key', async () => {
+    const mw = await loadMiddleware({
+      APP_ENV: 'production',
+      API_KEY: '',
+      CONSOLE_PASSWORD: 'secret',
+    });
+    const forged = await mw(mkReq('/api/v1/incidents/x', 'PATCH', { 'x-netscope-console': '1' }));
+    expect(forged.status).toBe(500);
+
+    const token = await signConsoleSession('secret');
+    const allowed = await mw(
+      mkReq('/api/v1/incidents/x', 'PATCH', { cookie: `netscope_console=${token}` }),
+    );
+    expect(allowed.status).toBe(200);
   });
 
   test('production：无 cookie 跳到登录，带对的 cookie 放行', async () => {

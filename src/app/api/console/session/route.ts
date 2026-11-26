@@ -6,53 +6,44 @@ import {
   passwordsMatch,
   signConsoleSession,
 } from '@/lib/console-session';
+import { AppError, toErrorBody } from '@/lib/errors';
+import { readJsonLimited } from '@/lib/http/body';
 
 export const dynamic = 'force-dynamic';
 
 const BodySchema = z.object({ password: z.string().min(1).max(200) });
 
 export async function POST(req: Request) {
-  const expected = process.env.CONSOLE_PASSWORD ?? '';
-  if (!expected) {
-    return NextResponse.json(
-      { error: { code: 'SERVER_MISCONFIG', message: '未配置 CONSOLE_PASSWORD' } },
-      { status: 500 },
-    );
-  }
-
-  let body: unknown;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { error: { code: 'VALIDATION_FAILED', message: '请求体不是合法 JSON' } },
-      { status: 400 },
-    );
-  }
-  const parsed = BodySchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: { code: 'VALIDATION_FAILED', message: '请填写口令' } },
-      { status: 400 },
-    );
-  }
-  if (!(await passwordsMatch(parsed.data.password, expected))) {
-    return NextResponse.json(
-      { error: { code: 'UNAUTHORIZED', message: '口令不正确' } },
-      { status: 401 },
-    );
-  }
+    const expected = process.env.CONSOLE_PASSWORD ?? '';
+    if (!expected) {
+      throw new AppError('SERVER_MISCONFIG', '未配置 CONSOLE_PASSWORD');
+    }
 
-  const token = await signConsoleSession(expected);
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set({
-    name: CONSOLE_COOKIE,
-    value: token,
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: new URL(req.url).protocol === 'https:',
-    path: '/',
-    maxAge: CONSOLE_TTL_SECONDS,
-  });
-  return response;
+    // 与其他写路由同一条路径：chunked 请求没有 Content-Length，只有边读边计数才拦得住
+    const body = await readJsonLimited(req);
+    const parsed = BodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_FAILED', '请填写口令');
+    }
+    if (!(await passwordsMatch(parsed.data.password, expected))) {
+      throw new AppError('UNAUTHORIZED', '口令不正确');
+    }
+
+    const token = await signConsoleSession(expected);
+    const response = NextResponse.json({ ok: true });
+    response.cookies.set({
+      name: CONSOLE_COOKIE,
+      value: token,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: new URL(req.url).protocol === 'https:',
+      path: '/',
+      maxAge: CONSOLE_TTL_SECONDS,
+    });
+    return response;
+  } catch (error) {
+    const { status, body } = toErrorBody(error);
+    return NextResponse.json(body, { status });
+  }
 }

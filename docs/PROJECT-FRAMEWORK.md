@@ -32,6 +32,22 @@ npm run dev                   # http://localhost:3000
 
 无 LLM Key 时全站可用（AI 研判走规则降级），这是刻意设计：先保证 demo 在任何机器上能跑，再谈智能。
 
+### 0.2 实现偏差汇总（2026-11-26 补，读本文时以此为准）
+
+本文保留为**设计意图与边界规则**的来源；代码已经超出本文的部分，以下面这张表为准，
+逐条细节在 `docs/STATE.md` 的「未完成 / 已知偏差」。
+
+| 本文位置 | 实现的现状 |
+|---|---|
+| 第 8 节数据模型 | 不是现状。实际新增 7 张表（`HypothesisVerify` / `Service` / `ServiceDevice` / `DeviceAlias` / `MetricSample` / `IngestBatch` / `Tenant`），`Incident` 多 `assignee / team / claimedAt / slaMinutes / tenantId / statusLog / closure / analysisMeta / lastSeen`，`Hypothesis` 多裁决字段。**以 `prisma/schema.prisma` + `prisma/migrations/` 为准** |
+| 第 9 节 API | 以 `docs/API.md` 为准：控制台登录、设备别名、批次、指标采样、审计游标分页、保留策略、RBAC 角色与错误码都在那里 |
+| 第 9/11 节「研判 SSE」 | 同步 POST + 1.5s 轮询 `/analyze/status`。AC-05 的「1 秒内首个 SSE 事件」落成「点击后立即渲染阶段文案」，SSE 留到 P1 |
+| 第 9 节设备/链路写接口 | 未开放，拓扑只读（P1 拓扑编辑再做） |
+| 第 13 节「API 无鉴权」 | 已是历史：production 写接口要 `x-api-key` 或控制台 cookie，页面要 `CONSOLE_PASSWORD` |
+| 第 2/8 节语义检索 | `CaseRecord.embedding` 仍为空，检索是关键词 AND + 标签，相似召回按告警类型/层级 |
+| 第 2 节多租户 | 已做「Key 绑定租户 + 查询过滤」，设备名 / 别名 / 事件编号租户内唯一；指纹签名与 `clusterKey` 仍全局唯一，控制台视图固定 default |
+| 第 10.5 节评测集 | 实际 dev 16 / test 8，正例/干扰/对抗不是各 8；留出集另跑过一次真实模型（`evals/results/test-live.md`，Top1 57.1%），README「真实模型对照」有两张表并排 |
+
 ---
 
 ## 1. 项目定义

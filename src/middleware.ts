@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { CONSOLE_COOKIE, safeNextPath, verifyConsoleSession } from '@/lib/console-session';
+import {
+  CONSOLE_COOKIE,
+  CONSOLE_TRUST_HEADER,
+  safeNextPath,
+  verifyConsoleSession,
+} from '@/lib/console-session';
 import { findCredential, parseCredentials } from '@/lib/keys';
 import { rateLimitIdentity } from '@/lib/rate-limit';
 import { hasRole, requiredRole, ROLE_LABEL } from '@/lib/rbac';
@@ -114,13 +119,15 @@ export async function middleware(req: NextRequest) {
   if (isWrite && isGuardedApi(pathname)) {
     const cl = Number(req.headers.get('content-length') ?? '0');
     if (cl > BODY_LIMIT) {
-      return reject('BODY_TOO_LARGE', `请求体超过 ${BODY_LIMIT} 字节限制`, 413);
+      // 与 lib/http/body.ts 的流式超限共用同一个 code：客户端只认 PAYLOAD_TOO_LARGE 即可
+      return reject('PAYLOAD_TOO_LARGE', `请求体超过 ${BODY_LIMIT} 字节限制`, 413);
     }
   }
 
   const required = pathname.startsWith('/api/v1/') ? requiredRole(req.method, pathname) : null;
+  const sessionOk = APP_ENV === 'production' && (await hasValidSession(req));
 
-  if (APP_ENV === 'production' && required !== null) {
+  if (APP_ENV === 'production' && required !== null && !sessionOk) {
     if (CREDENTIALS.length === 0) {
       return reject('SERVER_MISCONFIG', 'production 环境未配置 API_KEY / API_KEYS', 500);
     }
@@ -147,7 +154,7 @@ export async function middleware(req: NextRequest) {
       const next = safeNextPath(req.nextUrl.searchParams?.get('next'));
       return NextResponse.redirect(new URL(next, req.url));
     }
-    return NextResponse.next();
+    return continueAs(req, false);
   }
 
   if (isConsolePage(pathname) && APP_ENV === 'production') {
@@ -168,7 +175,14 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  return continueAs(req, sessionOk);
+}
+
+function continueAs(req: NextRequest, sessionOk: boolean) {
+  const headers = new Headers(req.headers);
+  headers.delete(CONSOLE_TRUST_HEADER);
+  if (sessionOk) headers.set(CONSOLE_TRUST_HEADER, '1');
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {
