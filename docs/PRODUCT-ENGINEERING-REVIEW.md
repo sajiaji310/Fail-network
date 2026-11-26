@@ -10,17 +10,17 @@ v0.1.0 的纵向闭环已经做完。初评第 6 节的四个阶段，安全边�
 
 仍要处理的只有这些：
 
-| 优先级 | 事项 | 代码里的现状 |
-| --- | --- | --- |
-| 先做 | 历史告警回放 | 已落地。`replayCorrelation` 按告警自己的时间、每次最多前进 2 小时调用 `runCorrelation`。`POST /api/v1/correlation/run` 接受 `{ from, to }`，命令是 `npm run corr:run -- --from=... --to=...` |
-| 先做 | 入库改成批量 | 已落地。同一批按指纹在内存里定周期，再分组写入。抑制仍按输入顺序，父先到记 `suppressed`，子先到记 `retroSuppressed`。唯一键冲突时退回逐行 |
-| 先做 | 进程外的批次、研判进度、限流 | 三者都在本进程。单实例先不换 Redis。重启把批次标 FAILED；多实例轮询研判进度会打空 |
-| 给人用之前 | 控制台鉴权 | 已落地。`APP_ENV=production` 时页面要 `CONSOLE_PASSWORD` 换的 cookie，没配口令则页面 500。`local` 不拦。读接口仍不要求 API Key |
-| 给人用之前 | 多租户唯一键 | 已落地会撞车的三处：`Device.name`、`DeviceAlias.alias`、`Incident.code` 改为 `(tenantId, …)`。`Alert.externalKey` 之前已是租户内唯一。`Incident.clusterKey` 与指纹签名仍全局唯一，但键里是设备 id，同名设备不会共用。`Service.code` 仍全局唯一。控制台仍是 default 租户视图。本机用 `prisma/manual/20261126_tenant_uniques.sql` |
-| 评测 | 真实模型对照 | 已实测留出集（2026-11-26，DeepSeek `deepseek-chat`，`evals/results/test-live.md`）。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、token 49017、fallback 0、平均耗时 8969 ms。失败：test-01 上游归因、test-07 不该给结论、test-08 拓扑全缺。规则引擎基线仍是 `evals/results/test.md`（Top1/Top3 85.7%，只败 test-08），README 对那张表 |
-| 发布 | Docker 实机、远端 | Dockerfile 只做了逐行校对。仓库没有 remote，`v0.1.0` tag 在本地 |
-| 数据 | 种子历史事件 | 已落地。每条历史案例挂 3 条 `RESOLVED` 告警，外部键 `seed:{code}:{0|1|2}`，重复执行不增量 |
-| 以后 | 状态历史表、超长文件、语义检索 | `statusLog` / `closure` 仍是 JSON；多个文件超过 300 行；`embedding` 为空 |
+| 优先级     | 事项                           | 代码里的现状                                                                                                                                                                                                                                                                                                                                |
+| ---------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 先做       | 历史告警回放                   | 已落地。`replayCorrelation` 按告警自己的时间、每次最多前进 2 小时调用 `runCorrelation`。`POST /api/v1/correlation/run` 接受 `{ from, to }`，命令是 `npm run corr:run -- --from=... --to=...`                                                                                                                                                |
+| 先做       | 入库改成批量                   | 已落地。同一批按指纹在内存里定周期，再分组写入。抑制仍按输入顺序，父先到记 `suppressed`，子先到记 `retroSuppressed`。唯一键冲突时退回逐行                                                                                                                                                                                                   |
+| 先做       | 进程外的批次、研判进度、限流   | 三者都在本进程。单实例先不换 Redis。重启把批次标 FAILED；多实例轮询研判进度会打空                                                                                                                                                                                                                                                           |
+| 给人用之前 | 控制台鉴权                     | 已落地。`APP_ENV=production` 时页面要 `CONSOLE_PASSWORD` 换的 cookie，没配口令则页面 500。`local` 不拦。读接口仍不要求 API Key                                                                                                                                                                                                              |
+| 给人用之前 | 多租户唯一键                   | 已落地会撞车的三处：`Device.name`、`DeviceAlias.alias`、`Incident.code` 改为 `(tenantId, …)`。`Alert.externalKey` 之前已是租户内唯一。`Incident.clusterKey` 与指纹签名仍全局唯一，但键里是设备 id，同名设备不会共用。`Service.code` 仍全局唯一。控制台仍是 default 租户视图。本机用 `prisma/manual/20261126_tenant_uniques.sql`             |
+| 评测       | 真实模型对照                   | 已实测留出集（2026-11-26，DeepSeek `deepseek-chat`，`evals/results/test-live.md`）。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、token 49017、fallback 0、平均耗时 8969 ms。失败：test-01 上游归因、test-07 不该给结论、test-08 拓扑全缺。规则引擎基线仍是 `evals/results/test.md`（Top1/Top3 85.7%，只败 test-08），README 对那张表 |
+| 发布       | Docker 实机、远端              | Dockerfile 只做了逐行校对。仓库没有 remote，`v0.1.0` tag 在本地                                                                                                                                                                                                                                                                             |
+| 数据       | 种子历史事件                   | 已落地。每条历史案例挂 3 条 `RESOLVED` 告警，外部键 `seed:{code}:{0                                                                                                                                                                                                                                                                         | 1   | 2}`，重复执行不增量 |
+| 以后       | 状态历史表、超长文件、语义检索 | `statusLog` / `closure` 仍是 JSON；多个文件超过 300 行；`embedding` 为空                                                                                                                                                                                                                                                                    |
 
 下面这些初评问题已经做完，或口径已经变了，不要再当缺陷修：
 
@@ -386,13 +386,13 @@ JSON 可以作为兼容读模型保留一段时间，但新写入应逐步转到
 
 v0.1.0 收口时的记录（见 `docs/STATE.md` 与 `docs/RELEASE-v0.1.0.md`）：
 
-| 命令 | 结果 |
-| --- | --- |
-| format / lint / typecheck / test | 通过，316 个单测、41 个文件 |
-| build | 通过 |
-| Playwright | 2 条通过 |
-| `npm run accept:phase4 -- --write` | PASS 15 / FAIL 0 |
-| `docker compose up` | 未跑。本机没有 Docker，只做了文件校对 |
+| 命令                               | 结果                                  |
+| ---------------------------------- | ------------------------------------- |
+| format / lint / typecheck / test   | 通过，316 个单测、41 个文件           |
+| build                              | 通过                                  |
+| Playwright                         | 2 条通过                              |
+| `npm run accept:phase4 -- --write` | PASS 15 / FAIL 0                      |
+| `docker compose up`                | 未跑。本机没有 Docker，只做了文件校对 |
 
 这次复核没有重跑上述命令。
 
