@@ -336,6 +336,9 @@ async function main() {
           topologyLevel: outcome.topologyLevel,
           reasoningMs:
             outcome.progress?.stages.find((s) => s.stage === 'REASONING')?.durationMs ?? 0,
+          // 门禁拒答与模型失败降级同为 RULE_FALLBACK，靠这个标记区分；
+          // 老结果没这个字段时退回文案识别，保证历史数据仍可统计
+          abstained: outcome.abstained ?? outcome.degradedReason?.startsWith('闸门 R1') === true,
         });
       }
 

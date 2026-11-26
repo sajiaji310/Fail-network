@@ -3,7 +3,7 @@ import { llmMode, rcaGateEnabled, rcaHintEnabled, type LlmMode } from '@/lib/env
 import { createLogger } from '@/lib/logger';
 import { capConfidence } from '@/modules/topology/completeness';
 import { buildIncidentContext } from './context';
-import { clearanceMissingInfo, gateHypotheses } from './gate';
+import { ABSTAIN_MISSING_INFO, clearanceMissingInfo, gateHypotheses } from './gate';
 import { persistAnalysis } from './persist';
 import { produceResult } from './produce';
 import {
@@ -69,6 +69,8 @@ export type AnalysisOutcome = {
   gate?: { cleared: number; reasons: string[] };
   /** 逐条假设的来源（Spec §3.4）：补位发生后同一份结论里会有两种来源 */
   hypothesesOrigin?: HypothesisOrigin[];
+  /** 门禁拒答（未调用模型）：评测用它把拒答例从延迟统计里剔除 */
+  abstained: boolean;
 };
 
 /** 从库里读回上一次研判（命中缓存时不再调用模型） */
@@ -130,6 +132,7 @@ async function readCachedAnalysis(
     analyzedAt: meta.analyzedAt,
     gate: meta.gate,
     hypothesesOrigin: meta.hypothesesOrigin,
+    abstained: meta.abstained ?? false,
   };
 }
 
@@ -171,6 +174,10 @@ export async function runAnalysis(
       : { kept: verify.kept, cleared: [] };
 
     const analyzedAt = new Date().toISOString();
+    // 门禁拒答时补的那条三段式 missingInfo（PRD §2.3）：必须排在最前，且带 TYPE_UNKNOWN 前缀，
+    // 否则验收脚本只能看到规则引擎那句泛化建议，无法判断"是因为类型未登记才拒的"
+    const abstainInfo = produced.abstained ? [ABSTAIN_MISSING_INFO] : [];
+
     // 空结论补位（Spec §3.4）：模型路径上假设被清空时，接上规则引擎的候选并逐条标来源
     const rescued = rescueEmptyResult({
       ctx,
@@ -180,7 +187,11 @@ export async function runAnalysis(
       summary: produced.result.summary,
       impactScope: produced.result.impactScope,
       missingInfo: [
-        ...new Set([...produced.result.missingInfo, ...clearanceMissingInfo(gate.cleared)]),
+        ...new Set([
+          ...abstainInfo,
+          ...produced.result.missingInfo,
+          ...clearanceMissingInfo(gate.cleared),
+        ]),
       ],
     });
 
@@ -198,10 +209,12 @@ export async function runAnalysis(
               '全部假设未通过证据校验或归因门禁，未能给出可信根因',
             ]),
           ].slice(0, 5)
-        : rescued.missingInfo;
+        : rescued.missingInfo.slice(0, 5);
     const gateMeta = {
       cleared: gate.cleared.length,
       reasons: gate.cleared.map((item) => `${item.reason}：${item.detail}`),
+      // 规则编号落库（PRD AC-2）：只记命中的那条，没有命中就不写这两个键
+      ...(produced.abstainRule ? { rule: produced.abstainRule, hit: true } : {}),
     };
 
     const meta: AnalysisMeta = {
@@ -216,6 +229,7 @@ export async function runAnalysis(
       tokensUsed: produced.tokensUsed,
       gate: gateMeta,
       promptHint: rcaHintEnabled() ? 'on' : 'off',
+      abstained: produced.abstained,
       hypothesesOrigin: rescued.origin,
       topology: {
         level: ctx.topology.level,
@@ -269,6 +283,7 @@ export async function runAnalysis(
       degradedReason: rescued.degradedReason,
       analyzedAt,
       hypothesesOrigin: rescued.origin,
+      abstained: produced.abstained,
       progress,
       gate: gateMeta,
     };

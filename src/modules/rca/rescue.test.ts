@@ -15,9 +15,11 @@ import type { HypothesisDraft } from './schema';
 
 const ctx = makeContext();
 const savedRescue = env.RCA_RESCUE;
+const savedGate = env.RCA_GATE;
 
 afterEach(() => {
   env.RCA_RESCUE = savedRescue;
+  env.RCA_GATE = savedGate;
 });
 
 const base = {
@@ -148,6 +150,15 @@ describe('不该补位的时候一条都不补', () => {
     const result = rescueEmptyResult({ ...base, kept: [], missingInfo: [] });
     expect(result.rescued).toBe(false);
     expect(result.hypotheses).toHaveLength(0);
+  });
+
+  it('RCA_GATE=off 时不补位（它的语义是回到 0.1，补位也属 0.2）', () => {
+    env.RCA_RESCUE = 'on';
+    env.RCA_GATE = 'off';
+    const result = rescueEmptyResult({ ...base, kept: [], missingInfo: [] });
+    expect(result.rescued).toBe(false);
+    expect(result.hypotheses).toHaveLength(0);
+    expect(result.source).toBe('LLM');
   });
 
   it('规则引擎也返回空（R1 场景）→ 保持空，不为凑数编造', () => {

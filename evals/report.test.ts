@@ -32,6 +32,7 @@ const score = (over: Partial<CaseScore> = {}): CaseScore => ({
   top1Origin: 'RULE_FALLBACK',
   hintOnlyTop1: false,
   reasoningMs: 0,
+  abstained: false,
   failures: [],
   ...over,
 });

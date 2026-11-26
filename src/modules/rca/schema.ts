@@ -37,11 +37,13 @@ export const HypothesisSchema = z.object({
   confidence: z.number().min(0).max(1),
   /**
    * 上限一律只收紧、不改类型不改必填性（Spec §3.6）：
-   * evidence 8→3、desc 160→80、verifySteps 5→3、actions 5→2。
-   * 收紧的是"说多少"，不是"能不能说" —— 前端仍按同一套字段渲染，
-   * 少写两条处置动作的信息损失，远小于一次被截断的调用。
+   * desc 160→80、verifySteps 5→3、actions 5→2。
+   *
+   * evidence 保留 max 8，比 Spec 表里的 3 宽 —— 这是有意的安全阀：prompt 要求模型最多写 3 条，
+   * 但把 schema 也焊死在 3，会让"多引了一条证据"的假设被结构性拒绝（重试一次仍超限就整条降级），
+   * 代价远大于省下的几十个 token。**prompt 管体量，schema 只管底线**。
    */
-  evidence: z.array(EvidenceSchema).min(1).max(3),
+  evidence: z.array(EvidenceSchema).min(1).max(8),
   verifySteps: z.array(z.string().min(2).max(160)).min(1).max(3),
   actions: z.array(ActionSchema).max(2),
 });
@@ -101,17 +103,23 @@ export const AnalysisMetaSchema = z.object({
   /** 本次研判的 token 用量：评测要算成本，缓存命中时也要能读回来 */
   tokensUsed: z.number().nullable().optional(),
   /**
-   * 后置门禁 GATE-02 的清空记录（Spec §3.3）：清了几条、每条为什么。
-   * 落库理由：拒答是**需要复盘的事件**，事后要能回答"是模型没给结论，还是门禁清空了它的结论"。
+   * 拒答门禁的记录（Spec §3.3 / PRD AC-2）：
+   *   R1 命中记 `{ rule:'R1', hit:true }` —— 规则编号必须落库，事后要能回答"是哪条规则拒的"；
+   *   GATE-02 清空记 `cleared` 条数与逐条原因。
+   * 落库理由：拒答是**需要复盘的事件**，要能区分"模型没给结论"和"门禁清空了它的结论"。
    */
   gate: z
     .object({
       cleared: z.number(),
       reasons: z.array(z.string()),
+      rule: z.enum(['R1']).optional(),
+      hit: z.boolean().optional(),
     })
     .optional(),
   /** 本次研判的提示词形态（RCA_HINT 开/关）：A/B 对比与回滚复盘都要能对上号 */
   promptHint: z.enum(['on', 'off']).optional(),
+  /** 本次是门禁拒答（未调用模型）而非模型失败降级：延迟统计必须能把这两种分开 */
+  abstained: z.boolean().optional(),
   /**
    * 逐条假设的来源（Spec §3.4）。与 hypotheses 同序同长：
    * 空结论补位之后，同一份结论里可能一半来自模型、一半来自规则引擎，

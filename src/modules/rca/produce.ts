@@ -32,6 +32,14 @@ export type ProduceOutcome = {
   model: string | null;
   tokensUsed: number | null;
   degradedReason: string | null;
+  /**
+   * 本次是"门禁拒答"，不是"模型失败降级"。
+   * 两者 source 都是 RULE_FALLBACK，但延迟口径必须分开：拒答根本没调模型，
+   * 混进延迟统计就是拿"没跑"当"跑得快"（Spec §4 要求剔除）。
+   */
+  abstained: boolean;
+  /** 命中的拒答规则编号（PRD AC-2 要求规则编号可落库）；未命中为 null */
+  abstainRule: 'R1' | null;
 };
 
 type ParsedResult = { ok: true; data: AnalysisResult } | { ok: false; error: string };
@@ -50,13 +58,19 @@ export function parseResult(content: string): ParsedResult {
 }
 
 /** 降级出口：规则引擎跑一遍，token 一律记 null（没调模型就没有成本） */
-export function degradedOutcome(ctx: ContextBundle, reason: string): ProduceOutcome {
+export function degradedOutcome(
+  ctx: ContextBundle,
+  reason: string,
+  abstainRule: 'R1' | null = null,
+): ProduceOutcome {
   return {
     result: ruleFallback(ctx),
     source: 'RULE_FALLBACK',
     model: null,
     tokensUsed: null,
     degradedReason: reason,
+    abstained: abstainRule !== null,
+    abstainRule,
   };
 }
 
@@ -69,7 +83,7 @@ export async function produceResult(ctx: ContextBundle, mode: LlmMode): Promise<
   // 放在这里而不是 route 层，是为了让"没调用模型"这件事也走同一条降级路径（source / tokensUsed 一致）。
   if (rcaGateEnabled()) {
     const decision = shouldAbstainBeforeModel(ctx);
-    if (decision.abstain) return degradedOutcome(ctx, decision.reason ?? R1_REASON);
+    if (decision.abstain) return degradedOutcome(ctx, decision.reason ?? R1_REASON, 'R1');
   }
 
   const prompt = renderPrompt(ctx);
@@ -85,6 +99,8 @@ export async function produceResult(ctx: ContextBundle, mode: LlmMode): Promise<
         model: first.model,
         tokensUsed: first.tokensUsed,
         degradedReason: null,
+        abstained: false,
+        abstainRule: null,
       };
     }
 
@@ -117,6 +133,8 @@ export async function produceResult(ctx: ContextBundle, mode: LlmMode): Promise<
         model: repair.model,
         tokensUsed: (first.tokensUsed ?? 0) + (repair.tokensUsed ?? 0),
         degradedReason: '首次输出格式不合格，已修复一次',
+        abstained: false,
+        abstainRule: null,
       };
     }
 

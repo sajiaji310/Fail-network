@@ -38,6 +38,11 @@ export type ObservedAnalysis = {
    * 与 durationMs 分开：后者含取数、校验与落库，用它定模型性能目标会把 DB 耗时算成模型问题。
    */
   reasoningMs?: number;
+  /**
+   * 本次是门禁拒答（压根没调模型），不是模型失败降级。
+   * 两者 source 都是 RULE_FALLBACK，只有这个标记能把它们分开 —— 否则"没跑"会被算成"跑得快"。
+   */
+  abstained?: boolean;
 };
 
 export type Observation = {
@@ -100,6 +105,8 @@ export type CaseScore = {
   hintOnlyTop1: boolean;
   /** REASONING 阶段耗时合计（各事件求和） */
   reasoningMs: number;
+  /** 本场景是否整场都是门禁拒答（未调用模型）：延迟统计要把它剔除 */
+  abstained: boolean;
   /** 人读的失败原因，空表示通过 */
   failures: string[];
 };
@@ -197,6 +204,7 @@ export function scoreCase(kase: EvalCase, obs: Observation): CaseScore {
     top1Origin: top1List[0]?.origin ?? null,
     hintOnlyTop1,
     reasoningMs: obs.analyses.reduce((sum, a) => sum + (a.reasoningMs ?? 0), 0),
+    abstained: obs.analyses.length > 0 && obs.analyses.every((a) => a.abstained === true),
     failures,
   };
 }
@@ -254,6 +262,10 @@ export type Aggregate = {
   evidenceRate: number;
   avgDurationMs: number;
   p95DurationMs: number;
+  /** 门禁拒答的场景数（未调用模型）：延迟门禁必须把这类样本剔除 */
+  abstainedCases: number;
+  /** 参与延迟统计的样本数（有 source 且非拒答） */
+  latencySampleSize: number;
   /** REASONING 阶段耗时（模型那一段）：延迟门禁落在它身上，不落整条 runAnalysis */
   reasoning: { avgMs: number; p95Ms: number };
   totalTokens: number;
@@ -328,16 +340,15 @@ export function aggregate(scores: readonly CaseScore[]): Aggregate {
   const full = topologyScored.filter((s) => s.topologyLevel === 'FULL');
   const degraded = topologyScored.filter((s) => s.topologyLevel !== 'FULL');
 
-  const durations = scores
-    .filter((s) => s.source !== null)
-    .map((s) => s.durationMs)
-    .sort((a, b) => a - b);
+  // 延迟只统计"真的跑过模型"的场景：门禁拒答没调模型，混进来等于拿没跑当跑得快
+  const latencySamples = scores.filter((s) => s.source !== null && !s.abstained);
+  const durations = latencySamples.map((s) => s.durationMs).sort((a, b) => a - b);
   const p95 =
     durations.length === 0 ? 0 : durations[Math.max(0, Math.ceil(durations.length * 0.95) - 1)]!;
 
   // REASONING 阶段只统计真的跑过模型的事件（规则引擎的 reasoning≈0，会把均值稀释成好看的数字）
   const reasoningDurations = scores
-    .filter((s) => s.source !== null && s.reasoningMs > 0)
+    .filter((s) => s.source !== null && !s.abstained && s.reasoningMs > 0)
     .map((s) => s.reasoningMs)
     .sort((a, b) => a - b);
   const reasoningP95 =
@@ -382,10 +393,11 @@ export function aggregate(scores: readonly CaseScore[]): Aggregate {
     criticalSuppressions: rootAlerts.filter((s) => s.rootAlertSuppressed).length,
     evidenceRate: round(raw === 0 ? 0 : valid / raw),
     avgDurationMs: Math.round(
-      scores.reduce((sum, s) => sum + s.durationMs, 0) /
-        Math.max(1, scores.filter((s) => s.source).length),
+      latencySamples.reduce((sum, s) => sum + s.durationMs, 0) / Math.max(1, latencySamples.length),
     ),
     p95DurationMs: p95,
+    abstainedCases: scores.filter((s) => s.abstained).length,
+    latencySampleSize: latencySamples.length,
     reasoning: {
       avgMs: Math.round(
         reasoningDurations.reduce((sum, v) => sum + v, 0) / Math.max(1, reasoningDurations.length),

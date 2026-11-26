@@ -62,6 +62,9 @@ export function renderMarkdown(report: EvalReport): string {
   );
   lines.push(`| P95 研判耗时 | ${agg.p95DurationMs} ms | — | — |`);
   lines.push(
+    `| 门禁拒答（未调用模型） | ${agg.abstainedCases} 例 | — | 已从延迟统计剔除，延迟分母 ${agg.latencySampleSize} |`,
+  );
+  lines.push(
     `| REASONING 阶段均值 | ${agg.reasoning.avgMs} ms | < 6000 ms | ${verdict(agg.reasoning.avgMs < 6000)} |`,
   );
   lines.push(

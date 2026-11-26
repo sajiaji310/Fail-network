@@ -354,3 +354,41 @@ describe('来源分账（Spec §4.5）', () => {
     expect(agg.reasoning.p95Ms).toBe(5400);
   });
 });
+
+describe('门禁拒答不计入延迟（Spec §4）', () => {
+  const abstainedObs = (over: Partial<Observation> = {}): Observation =>
+    obs({
+      analyses: [
+        {
+          code: 'INC-1',
+          source: 'RULE_FALLBACK',
+          hypotheses: [],
+          dropped: 0,
+          rawEvidence: 0,
+          validEvidence: 0,
+          durationMs: 8,
+          abstained: true,
+        },
+      ],
+      ...over,
+    });
+
+  it('拒答例单独计数，且不进入延迟样本', () => {
+    const agg = aggregate([
+      scoreCase(makeCase({ id: 'dev-01' }), obs()), // 正常路径 20ms
+      scoreCase(makeCase({ id: 'dev-02' }, { rootCause: null }), abstainedObs()), // 拒答 8ms
+    ]);
+    expect(agg.abstainedCases).toBe(1);
+    expect(agg.latencySampleSize).toBe(1);
+    // 若把拒答的 8ms 算进来，均值会掉到 14ms —— 那是"没跑"冒充"跑得快"
+    expect(agg.avgDurationMs).toBe(20);
+  });
+
+  it('全部都是拒答时延迟样本为 0，不产生 NaN', () => {
+    const agg = aggregate([scoreCase(makeCase({}, { rootCause: null }), abstainedObs())]);
+    expect(agg.latencySampleSize).toBe(0);
+    expect(agg.abstainedCases).toBe(1);
+    expect(Number.isNaN(agg.avgDurationMs)).toBe(false);
+    expect(agg.p95DurationMs).toBe(0);
+  });
+});

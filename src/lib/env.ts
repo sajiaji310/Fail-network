@@ -34,9 +34,9 @@ const EnvSchema = z.object({
   RCA_HINT: z.enum(['on', 'off']).default('on'),
   /** 设备信号段（§3.1/§4.5）。只用于 B 组消融，不得在 test 集上打开 */
   RCA_SIGNALS: z.enum(['on', 'off']).default('off'),
-  /** 两段式拒答门禁（§3.3）。off = 两条门禁都不生效，行为回到 0.1 */
+  /** 两段式拒答门禁（§3.3）。off = 关前置 R1 + 关 GATE-02 + 关补位，即"回到 0.1 行为"的回滚开关 */
   RCA_GATE: z.enum(['on', 'off']).default('on'),
-  /** 空结论规则补位（§3.4）。off = 模型没给出可用结论时就给空结论 */
+  /** 空结论规则补位（§3.4）。只在 RCA_GATE=on 时生效；off 只关补位，不影响门禁 */
   RCA_RESCUE: z.enum(['on', 'off']).default('on'),
 });
 

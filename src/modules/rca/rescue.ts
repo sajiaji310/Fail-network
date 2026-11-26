@@ -1,4 +1,4 @@
-import { rcaRescueEnabled } from '@/lib/env';
+import { rcaGateEnabled, rcaRescueEnabled } from '@/lib/env';
 import type { ContextBundle } from './context';
 import { ruleFallback } from './fallback';
 import type { HypothesisDraft } from './schema';
@@ -92,6 +92,9 @@ export function rescueEmptyResult(input: RescueInput): RescueResult {
 
   if (input.kept.length > 0) return passthrough;
   if (input.source !== 'LLM') return passthrough;
+  // RCA_GATE=off 的语义是"回到 0.1 行为"，补位属于 0.2 的一部分，必须跟着一起关。
+  // 否则运维以为关掉门禁就回滚了，实际还留着一个会改 source 的补位在跑。
+  if (!rcaGateEnabled()) return passthrough;
   if (!rcaRescueEnabled()) return passthrough;
 
   const rule = ruleFallback(input.ctx);

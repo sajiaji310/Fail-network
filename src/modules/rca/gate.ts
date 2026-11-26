@@ -33,15 +33,19 @@ export type PreGateDecision = {
 /**
  * 前置 R1。三个条件必须同时成立才拒答：
  *
- *   1. 有告警（没有告警的事件连"看不懂"的东西都没有，不归它管）；
- *   2. 每一条告警的类型都未登记（只要有一条能归因，模型就有起点）；
+ *   1. 有未抑制告警（没有告警的事件连"看不懂"的东西都没有，不归它管）；
+ *   2. 每一条未抑制告警的类型都未登记（只要有一条能归因，模型就有起点）；
  *   3. 没有任何早于首个告警的变更（变更本身就是可归因证据）。
+ *
+ * 为什么必须滤掉已抑制告警：`ctx.alerts` 里含 SUPERSEDED/抑制项，把被抑制的已登记告警
+ * 算进"有可归因证据"，会让 R1 在只剩噪声的事件上放行 —— 口径以"值班人实际看到的那批"为准。
  *
  * 刻意不检查"告警条数是否过薄"：生产上低置信结论比拒答有用，R3 已在 Spec §2.2 被否。
  */
 export function shouldAbstainBeforeModel(ctx: ContextBundle): PreGateDecision {
-  if (ctx.alerts.length === 0) return { abstain: false, reason: null };
-  if (!ctx.alerts.every((alert) => !isExplainedType(alert.type))) {
+  const live = ctx.alerts.filter((alert) => !alert.suppressed);
+  if (live.length === 0) return { abstain: false, reason: null };
+  if (!live.every((alert) => !isExplainedType(alert.type))) {
     return { abstain: false, reason: null };
   }
   if (ctx.changes.some((change) => change.beforeFirstAlert)) {
@@ -49,6 +53,16 @@ export function shouldAbstainBeforeModel(ctx: ContextBundle): PreGateDecision {
   }
   return { abstain: true, reason: R1_REASON };
 }
+
+/**
+ * 拒答时必须给的那一条 missingInfo（PRD §2.3 三段式：缺什么 → 为什么不能定论 → 怎么补）。
+ *
+ * 为什么不能沿用规则引擎自带的那句「缺少可用于归因的告警或变更证据，建议补充拓扑与变更数据源」：
+ * 它是泛化建议，既没有说明"缺的是类型登记"这个具体断点，也无法被验收脚本按枚举识别。
+ * 三段式与 TYPE_UNKNOWN 前缀让"为什么拒答"可机器统计、可人工执行。
+ */
+export const ABSTAIN_MISSING_INFO =
+  '[TYPE_UNKNOWN] 事件内全部告警类型未在告警字典登记 → 无法判断故障属于硬件/链路/配置哪一类，也无法与历史案例对齐 → 补充这些告警类型的采集项映射后重新研判';
 
 export type ClearedHypothesis = {
   cause: string;

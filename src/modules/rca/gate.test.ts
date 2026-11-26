@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { clearanceMissingInfo, gateHypotheses, R1_REASON, shouldAbstainBeforeModel } from './gate';
+import {
+  ABSTAIN_MISSING_INFO,
+  clearanceMissingInfo,
+  gateHypotheses,
+  R1_REASON,
+  shouldAbstainBeforeModel,
+} from './gate';
+import { isExplainedType } from './explainability';
 import { makeContext } from './test-utils';
 import type { ContextAlert, ContextBundle, ContextChange } from './context';
 import type { HypothesisDraft } from './schema';
@@ -67,9 +74,46 @@ describe('前置 R1：不该拒答时放行', () => {
     expect(shouldAbstainBeforeModel(mixed).abstain).toBe(false);
   });
 
-  it('全部告警未登记、但有一条事件前变更 → 不命中（变更本身可归因）', () => {
+  it('全部告警未登记 + 有一条事件前变更 → 不命中（变更本身可归因）', () => {
     const before = ctx.changes.filter((c) => c.beforeFirstAlert);
     expect(shouldAbstainBeforeModel(allUnknown(ctx, before)).abstain).toBe(false);
+  });
+
+  it('已抑制的已登记告警不参与 R1 判定（只看值班人实际看到的那批）', () => {
+    // 场景：唯一一条已登记告警是被抑制的（父告警连带压掉的端口告警），其余都是未登记类型。
+    // 按"含已抑制项"的口径会放行，按"只算未抑制"的口径必须拒答。
+    const suppressedKnown: ContextBundle = {
+      ...allUnknown(ctx, []),
+      alerts: [
+        ...allUnknown(ctx, []).alerts,
+        { ...ctx.alerts[0]!, id: 'suppressed-known', suppressed: true },
+      ],
+    };
+    expect(suppressedKnown.alerts.some((a) => a.suppressed && isExplainedType(a.type))).toBe(true);
+    expect(shouldAbstainBeforeModel(suppressedKnown).abstain).toBe(true);
+  });
+
+  it('只剩已抑制告警时不由 R1 管（没有未抑制告警 = 没有可判定的现场）', () => {
+    const allSuppressed: ContextBundle = {
+      ...ctx,
+      alerts: ctx.alerts.map((a) => ({ ...a, suppressed: true })),
+      changes: [],
+    };
+    expect(shouldAbstainBeforeModel(allSuppressed).abstain).toBe(false);
+  });
+});
+
+describe('拒答文案（PRD §2.3 三段式 + 禁用词）', () => {
+  it('带 TYPE_UNKNOWN 前缀、三段式、且给出可执行采集动作', () => {
+    expect(ABSTAIN_MISSING_INFO.startsWith('[TYPE_UNKNOWN]')).toBe(true);
+    expect(ABSTAIN_MISSING_INFO.split('→')).toHaveLength(3); // 缺什么 → 为什么不能定论 → 怎么补
+    expect(ABSTAIN_MISSING_INFO).toContain('采集项映射');
+  });
+
+  it('不含黑名单套话（否则等于没说）', () => {
+    for (const banned of ['请提供更多信息', '建议进一步排查', '疑似', '可能存在问题']) {
+      expect(ABSTAIN_MISSING_INFO).not.toContain(banned);
+    }
   });
 });
 

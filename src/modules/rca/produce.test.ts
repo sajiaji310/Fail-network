@@ -81,6 +81,9 @@ describe('前置 R1：命中就不调模型', () => {
     expect(outcome.source).toBe('RULE_FALLBACK');
     expect(outcome.tokensUsed).toBeNull();
     expect(outcome.degradedReason).toContain('闸门 R1');
+    // 拒答与"模型失败降级"都是 RULE_FALLBACK，必须能靠标记区分（PRD AC-2 规则编号落库）
+    expect(outcome.abstained).toBe(true);
+    expect(outcome.abstainRule).toBe('R1');
   });
 
   it('R1 命中时仍给出规则引擎的结论结构（包括空结论也原样返回，不编造）', async () => {
