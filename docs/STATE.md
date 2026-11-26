@@ -1,9 +1,17 @@
 # STATE.md — 当前进度 / 阻塞 / 下一步
 
 > Agent 每次会话必读必写。只记事实，不写计划口号。
-> 最后更新：2026-11-26 20:25
+> 最后更新：2026-11-26 23:20
 
 ## 当前任务
+
+**0.2 研判质量专项（2026-11-26 完成，QA 判定 pass）。** 主攻「研判质量」而非功能。根因不是模型能力不足，而是系统没把自己的归因本体告诉模型（`taxonomy.classifyAlertType` × `affinity.familyOf` → `categoryOfType`），模型只能靠猜类别；同时 `schema.ts` 的 `hypotheses.min(1)` 从结构上禁止空结论，拒答只能在校验后由确定性门禁清空。
+交付：`rca/explainability.ts`（归因本体单一事实来源，`fallback.ts` 改为委托、180 条等值断言锁行为）、`rca/gate.ts`（前置 R1，命中即 0 token 返回）+ GATE-02（verify 之后逐条清空）两段式拒答、`rca/rescue.ts`（空结论规则补位）、`rca/produce.ts`（拆出并加延迟预算 `max_tokens=2400` + 截断/超时止损不重试）、`rca/prompt.ts`（告警行尾 `归因:` 标签 + 输出体量收敛，`PROMPT_VERSION=rca-1.1`）。
+评测：test 集 8→16 例（14 有根因 / 2 拒答），`MANIFEST.sha256` 冻结。A 组 live：Top1 **12/14（85.7%）**、Top3 13/14、拒答 2/2、误拒答 0、均值 6046 ms、P95 10793 ms、`REASONING` 6017/10727 ms、截断率 0%、token 80633（5760/事件）；C 组规则：Top1 13/14、均值 18 ms。`hintOnlyTop1` 11/14，`top1ByOrigin` = LLM 12 / 补位 0。
+结论（须与数字同时披露）：**模型相对规则引擎未观测到增益** —— 模型独对 0 例，规则在模型答错的 test-01 上答对，test-08 两路径同错；test 集已饱和（hintOnly 11 ≈ A 12），不得把 85.7% 写成能力提升。四项延迟指标未达目标、落最低可接受档。
+门禁：`lint` / `tsc --noEmit` / `format:check` 全绿，`vitest` **50 文件 / 579 用例**（`581` 已撤回）。`split.test.ts` 的存量非确定性已修：`runCorrelation` 事件合并阶段加载整租户 ACTIVE 事件且不带时间过滤，用例建在 `default` 租户时断言取决于库内状态；`55449ee` 将其迁到 `split-test` 专属租户，单跑 10/10、全量 2×579 全绿。
+提交链：`8b919dc`（实现，A/C 数字绑定于此）→ `55449ee`（测试隔离）→ `ab6f158`（规格修订/评测溯源/16 例基线入库）→ 本判定提交。验收见 `docs/rca-quality/QA-REPORT-0.2.md`（pass，BL-1~BL-6 全关）；评测透明度见 `docs/rca-quality/EVAL-PROVENANCE.md`。
+0.3 待办：AC-4 在评测层无断言（`forbid` + `scoreCase`）；`evals/report.ts` 的 ✅/❌ 改文本；设备查询的租户过滤需全仓复核（QA A-11）；标注独立性与 hintOnly/模型机会数对等（`evals/results/README-0.3-backlog.md`）。
 
 **交付前收口第二轮（详见文末「交付前收口第二轮」一节）。** 收掉上一轮 review 列出的漂移与缺陷：
 控制台登录后写接口放行、413 错误码统一为 `PAYLOAD_TOO_LARGE`、登录接口改走 `readJsonLimited`、
