@@ -39,3 +39,6 @@ Thumbs.db
 # local tooling（便携版数据库不入库）
 .tools/
 .next-*/
+
+# 本地 Docker 实机验证用（宿主端口改 5433/3002，绕开本机 PG）
+docker-compose.verify.yml

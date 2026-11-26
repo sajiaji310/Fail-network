@@ -10,6 +10,12 @@
 README 补真实模型留出集对照、API.md / RELEASE / 框架文档补漂移、新增 Prisma 迁移基线。
 门禁 lint / typecheck / **test 345 passed（45 文件）** 全绿。
 
+**发布收口第三轮（2026-11-26 20:50）。** 远端仓库 `sajiaji310/Fail-network` 已建并推送：`main` = `5ff8a06`、
+`v0.1.0` = tag 对象 `a613b0b` → commit `ed2a8dd`（`git ls-remote` 已核对）。本机演示库已
+`migrate resolve --applied 20261126000000_init`，`migrate status` 变为「up to date」，登记前后数据量不变
+（Device 30 / Incident 31 / Alert 113）。Docker 首次实机跑通（详见下方「Docker 实机验证」），
+容器启动由 `db push` 改为 `migrate deploy`。
+
 上一轮（同日 18:20）：第 4 阶段验收已在本机跑完。生产服务在 3100，`/api/health` 为 `status=ok db=up llm=live`。`accept:phase4 --write` 对 3100 是 PASS 15 / FAIL 0，随后 `--clean`（告警 1 · 事件 0 · 批次 4 · 采样 4）。Playwright 2 条通过。`lint`、`tsc`、`next build`（产物在 `.next-serve`）都通过。8 张截图已按当前页面重生成。研判降级测试在文件内临时清空 Key，避免 `.env` 有 Key 时打到模型并超时。
 
 阶段索引：T01–T09（MVP-0 纵向闭环）→ 第 2 阶段（算法欠账）→ 第 3 阶段（值班效率）→ 第 4 阶段（真实接入与规模化）。
@@ -494,7 +500,11 @@ L2 仍要求设备在影响面 ≤2 跳内。
   对抗例偏多是刻意的（MVP 阶段错判代价高于漏判），但正例只有 2 个的 test 集统计意义有限，
   分母小于 10 时一个场景就能挪动 14 个百分点
 - **留出集已用真实模型跑过**（2026-11-26，DeepSeek `deepseek-chat`）：结果在 `evals/results/test-live.md`。Top1 57.1%（4/7）、Top3 71.4%（5/7）、证据率 98.8%、49017 token、fallback 0、平均 8969 ms。9 次调用都是 `source=LLM`，日志里没有 schema 修复，也没有超时降级。失败是 test-01（上游归因）、test-07（该空结论却给了假设）、test-08（拓扑全缺）。规则引擎基线 `evals/results/test.md` 没动，README 已加「真实模型对照」把两张表并排（2026-11-26 第二轮）
-- **Docker 镜像已构建**：`netscope-app:latest`。还没 `compose up`，因为本机 5432 被便携版 Postgres 占着
+- **Docker 已实机验证**（2026-11-26 晚，本项目首次 `compose up`）：用临时 `docker-compose.verify.yml` 把宿主端口改成
+  db `5433` / app `3002`（绕开本机占用的 5432），`up -d --build` 成功；容器内 `prisma migrate deploy`
+  应用 `20261126000000_init`，seed 出 30 设备 / 60 链路 / 30 事件 / 30 案例 / 90 历史告警，
+  `/api/health` = `status=ok db=up`，登录后 `/overview` `/incidents` `/metrics` `/sources` `/cases` 全 200，
+  `/api/v1/metrics` 返回真实采样点。默认 compose 的 5432 仍与本机便携版 PG 冲突，复现时需改端口或先停本机 PG
 - **留出集压缩比 6.0:1，等于数据集上限**：54 条告警 / 9 个标注事件，压缩效率 100%。
   二次收敛已经落地（同指纹、原事件仍活跃、上限 6 小时）。绝对比值要高于 6:1，只能换平均每事件不少于 8 条告警的数据，不是再改聚类
 - **Docker 未做实际构建验证**：本机没有 docker，Dockerfile / compose 只做了逐行校对
@@ -540,16 +550,16 @@ L2 仍要求设备在影响面 ≤2 跳内。
 
 ## 下一步
 
-1. 本机演示库登记迁移基线：`npx prisma migrate resolve --applied 20261126000000_init`（只登记，不改数据），
+1. ~~本机演示库登记迁移基线~~ → 已完成（2026-11-26）：`migrate status` 为 up to date，登记前后数据量不变（30 / 31 / 113）。
    之后结构变更走 `npx prisma migrate dev`，不要再用 `db push` 改已有库
 2. 人工验收第 4 阶段：`npm run accept:phase4 -- --write`（15 项断言，本机首轮 PASS 15 / FAIL 0），
    再人工看 `/sources` 的别名表与 `/metrics` 的四个数字是否符合预期；验完 `--clean` 清场
 3. ~~用真实环境的一批告警回填~~ → 已完成（T16，1.2 万条 / 36.2s / 331 行每秒，见上）。
    真实环境回填时重点看两项：**「设备不存在」占比**（决定别名表还要补多少）与
    **聚合后的事件数**（历史告警不会成簇；候选只包括仍为 ACTIVE、且 `lastSeen` 在最近 2 小时内的告警）
-4. MVP-0 收口：已打 `v0.1.0`（本地 annotated tag，指向 `ed2a8dd`）+ `docs/RELEASE-v0.1.0.md`。
-   GitHub Topics / Release 还差一步 —— **仓库没有配置 remote**，需要先 `git remote add origin <url>` 再 push
-   `main` 与 `v0.1.0`；Docker 仍未 `compose up` 实机验证（本机 5432 被便携版 PG 占着）
+4. MVP-0 收口：`v0.1.0` 已推送（tag 对象 `a613b0b` → commit `ed2a8dd`），`main` = `5ff8a06`；
+   Docker 已首次实机验证（见「未完成 / 已知偏差」）。**还差 GitHub Release 与 Topics** ——
+   建议以 `v0.1.0` 建 Release，正文直接用 `docs/RELEASE-v0.1.0.md`
 5. 历史回放已经有了：`npm run corr:run -- --from=<最早 lastSeen> --to=<最晚 lastSeen>`。不要把时间戳平移到当前窗口
 6. **下一轮先做研判质量，不是新功能**：真实模型留出集 Top1 57.1% 低于规则基线 85.7%，
    优先做 prompt / 上下文工程与「证据不足就拒答」；其余 P1 项（SSE、拓扑编辑、语义检索、用户表、

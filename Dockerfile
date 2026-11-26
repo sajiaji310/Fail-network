@@ -29,7 +29,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000
 
-# 运行期需要：构建产物 + prisma（db push）+ scripts（seed）+ src/tsconfig（tsx 跑 seed）
+# 运行期需要：构建产物 + prisma（migrate deploy）+ scripts（seed）+ src/tsconfig（tsx 跑 seed）
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public

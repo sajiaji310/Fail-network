@@ -130,6 +130,9 @@ npm run sim -- --scenario=core-switch-board-failure --reset
   `npx prisma migrate resolve --applied 20261126000000_init`，之后改结构用 `npx prisma migrate dev`。
   直接对老库跑 `migrate dev` 会尝试重建已有表。
 - `prisma/manual/*.sql` 里的两次手工变更已包含在基线内，新库不需要重复执行。
+- **Docker**：容器启动跑 `prisma migrate deploy`（`docker/entrypoint.sh`）。全新数据卷直接建表；
+  如果卷是旧版用 `db push` 建的，`migrate deploy` 会因表已存在而失败 —— 先用 `docker compose down -v` 重建，
+  或进容器手动 `prisma migrate resolve --applied 20261126000000_init`。
 
 ## AI 研判是怎么工作的
 
