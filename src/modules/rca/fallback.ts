@@ -1,6 +1,6 @@
 import { alertTypeLabel, deviceLayerLabel } from '@/modules/alerts/labels';
-import { classifyAlertType } from '@/modules/alerts/taxonomy';
 import { familyOf } from '@/modules/correlation/affinity';
+import { categoryOfType, isExplainedType } from './explainability';
 import type { AnalysisResult, HypothesisCategory, HypothesisDraft } from './schema';
 import type { ContextAlert, ContextBundle, ContextChange } from './context';
 
@@ -74,16 +74,8 @@ function pickPrimaryAlert(alerts: readonly ContextAlert[]): ContextAlert | null 
 function categoryOf(alert: ContextAlert | null, change: ContextChange | null): HypothesisCategory {
   if (change) return 'CONFIG';
   if (!alert) return 'OTHER';
-  if (alert.alertClass === 'ROOT' || alert.alertClass === 'PARENT') return 'HARDWARE';
-  // DNS 超时被归在 QUALITY 族（与丢包/时延同族），但它的故障源几乎总在上游递归服务器，
-  // 归成 LINK 会把运维引向排查内网链路 —— 评测集 dev-04/test-04 都是这么错的。
-  if (alert.type.trim().toUpperCase() === 'DNS_TIMEOUT') return 'UPSTREAM';
-  const family = familyOf(alert.type);
-  if (family === 'LINK') return 'LINK';
-  if (family === 'ROUTING') return 'UPSTREAM';
-  if (family === 'RESOURCE') return 'CAPACITY';
-  if (family === 'QUALITY') return 'LINK';
-  return 'OTHER';
+  // 归因口径住在 explainability.ts（提示词与校验器也读它），这里只负责"变更优先"这一层
+  return categoryOfType(alert.type, alert.alertClass) ?? 'OTHER';
 }
 
 function causeOf(
@@ -165,11 +157,7 @@ function actionsOf(category: HypothesisCategory, deviceName: string): Hypothesis
   return [{ action: '持续观察 2 个采集周期并补充指标', risk: 'LOW', requiresApproval: false }];
 }
 
-/** 类型是否"可解释"：已登记进分类表或告警族表。未登记的类型不构成证据（AC-20 靠它兜底） */
-function isExplained(type: string): boolean {
-  return classifyAlertType(type) !== 'UNKNOWN' || familyOf(type) !== 'OTHER';
-}
-
+/** 打分与排序在下一层：归因（category）不在这里判，统一交给 explainability.ts */
 export function ruleFallback(ctx: ContextBundle): AnalysisResult {
   const alertsByDevice = new Map<string, ContextAlert[]>();
   for (const alert of ctx.alerts) {
@@ -234,7 +222,11 @@ export function ruleFallback(ctx: ContextBundle): AnalysisResult {
       //  - 未登记类型不给分（那是"看不懂"，不是"可疑"，AC-20 靠它兜底）
       //  - ROOT/PARENT 告警已经拿了 20/16 分，不再叠加，否则设备级故障会把
       //    "变更 + 直连"的最高分（40+30）压下去，ACL 类根因就排不到第一了
-      if (isExplained(alert.type) && alert.alertClass !== 'ROOT' && alert.alertClass !== 'PARENT') {
+      if (
+        isExplainedType(alert.type) &&
+        alert.alertClass !== 'ROOT' &&
+        alert.alertClass !== 'PARENT'
+      ) {
         score += WEIGHT.SELF;
         reasons.push('事件内设备');
       }
